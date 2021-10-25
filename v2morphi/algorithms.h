@@ -483,7 +483,7 @@ public:
 #ifdef QT_QML_DEBUG
     void test() {
 #ifdef DEBUG_OUT
-        for(size_t cell = 0; cell < graph.m_vertices; cell = coloring.m_cell_end[cell]) {
+        /*for(size_t cell = 0; cell < graph.m_vertices; cell = coloring.m_cell_end[cell]) {
             std::cout << (size_t)coloring.m_cell_level[cell] << "| ";
             for(size_t idx = cell; idx < coloring.m_cell_end[cell]; idx++)
                 std::cout << (size_t) coloring.m_permutation[idx] << ' ';
@@ -516,8 +516,15 @@ public:
         std::cout << coloring << std::endl;
 
         unindividualize(5);
-        std::cout << coloring << std::endl;
+        std::cout << coloring << std::endl;*/
 
+        solve();
+
+        for(size_t u = 0; u < graph.m_vertices; u++) {
+            for(size_t v = 0; v < graph.m_vertices; v++)
+                std::cout << graph.adjacent(max_node.permutation.m_inverse[u], max_node.permutation.m_inverse[v]) << ' ';
+            std::cout << std::endl;
+        }
 #endif
 
     }

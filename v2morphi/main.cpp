@@ -69,6 +69,7 @@ void test_bitarray_onebyte() {
 
 int main()
 {
+    srand(time(0));
     morphi::global_alloc.reserve(1ull << 20);
     // morphi::Array<int> arr = make_array();
 
@@ -101,7 +102,7 @@ int main()
 
     std::fstream infile;
     infile.open("/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-4");
-    morphi::AlgorithmSelector selector(infile);
+    morphi::AlgorithmSelector selector(infile, {.relabel = true});
     infile.close();
 
     selector.run();

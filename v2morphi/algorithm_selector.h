@@ -5,6 +5,8 @@
 #include <limits>
 #include <string>
 #include <iostream>
+#include <algorithm>
+#include <numeric>
 
 #include "array.h"
 #include "vector.h"
@@ -17,11 +19,32 @@ class AlgorithmSelector {
 public:
 
     struct Options;
+    struct Params;
 
     // AlgorithmSelector(command line options, input stream, other stuff)
     AlgorithmSelector(std::istream& input, const Options& opt) : m_options(opt) {
         fromStream(input);
         m_canon = Permutation<uint32_t>(m_vertices);
+
+        if(opt.relabel) {
+            m_params.relabeling = Permutation<uint32_t>(m_vertices);
+
+            // Generate random relabeling permutation
+            std::iota(m_params.relabeling.m_forward.m_data, m_params.relabeling.m_forward.m_end, 0);
+            std::random_shuffle(m_params.relabeling.m_forward.m_data, m_params.relabeling.m_forward.m_end);
+
+            // Calculate inverse permutation
+            for(size_t idx = 0; idx < m_vertices; idx++)
+                m_params.relabeling.m_inverse[m_params.relabeling.m_forward[idx]] = idx;
+
+            // Relabel coloring input
+            for(size_t idx = 0; idx < m_vertices; idx++)
+                m_colors[2 * idx] = m_params.relabeling[m_colors[2 * idx]];
+
+            // Relabel graph input
+            for(size_t idx = 0; idx < 2 * m_edges; idx++)
+                m_edge_list[idx] = m_params.relabeling[m_edge_list[idx]];
+        }
     }
 
     void fromStream(std::istream& input) {
@@ -69,6 +92,11 @@ public:
         solver.test();
 #else
         m_canon.copyFwd(solver.solve());
+
+        if(m_options.relabel) {
+            for(size_t idx = 0; idx < m_vertices; idx++)
+                m_canon.set(idx, m_params.relabeling.m_inverse[m_canon[idx]]);
+        }
 #endif
     }
 
@@ -84,8 +112,12 @@ public:
 
     // Command line options
     struct Options {
-        bool RandomRelabel;
+        bool relabel;
     } m_options;
+
+    struct Params {
+        Permutation<uint32_t> relabeling;
+    } m_params;
 
     // Raw graph input
     size_t m_vertices;
