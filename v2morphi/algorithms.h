@@ -173,6 +173,10 @@ public:
             assert(coloring.m_cell_end[idx] > idx);
             assert(coloring.m_cell_end[idx] <= coloring.size());
         }
+        size_t sum = 0;
+        for(size_t idx = 0; idx < coloring.size(); idx++)
+            sum += coloring[idx];
+        assert(sum == coloring.size() * (coloring.size() - 1) / 2);
     }
 
     template<bool RootLevel>
@@ -187,6 +191,10 @@ public:
         size_t split1 = 0, split2 = cell_end; // [cell_beg, split1), [split1, idx), [split2, cell_end)
         size_t idx = 0;
         while(idx < coloring.size()) {
+            assert(cell_beg <= split1);
+            assert(split1 <= idx);
+            assert(idx <= split2);
+            assert(split2 <= cell_end);
             uint8_t adj_count = (uint8_t) graph.adjacent(coloring[idx], coloring[work_cell]) +
                                 (uint8_t) graph.adjacent(coloring[idx], coloring[work_cell + 1]);
             if(adj_count == 0)
@@ -273,6 +281,7 @@ public:
                     idx = cell_beg = split1 = cell_end;
                     cell_end = split2 = coloring.m_cell_end[idx];
                 }
+                else break;
             }
         }
 
@@ -280,6 +289,10 @@ public:
             assert(coloring.m_cell_end[idx] > idx);
             assert(coloring.m_cell_end[idx] <= coloring.size());
         }
+        size_t sum = 0;
+        for(size_t idx = 0; idx < coloring.size(); idx++)
+            sum += coloring[idx];
+        assert(sum == coloring.size() * (coloring.size() - 1) / 2);
     }
 
     template<bool RootLevel>
@@ -393,6 +406,10 @@ public:
             assert(coloring.m_cell_end[idx] > idx);
             assert(coloring.m_cell_end[idx] <= coloring.size());
         }
+        size_t sum = 0;
+        for(size_t idx = 0; idx < coloring.size(); idx++)
+            sum += coloring[idx];
+        assert(sum == coloring.size() * (coloring.size() - 1) / 2);
     }
 
     void refineCells(size_t work_cell, size_t work_size, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
@@ -422,11 +439,15 @@ public:
             T cell_idx = coloring.m_permutation.m_inverse[stabilized.back()];
             active_cells.push(cell_idx);
             is_active.set(cell_idx);
+
+            assert(coloring.m_cell_end[cell_idx] != 0);
         }
         else {
             for(size_t cell_idx = 0; cell_idx != coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
                 active_cells.push(cell_idx);
                 is_active.set(cell_idx);
+
+                assert(coloring.m_cell_end[cell_idx] != 0);
             }
         }
 
@@ -436,8 +457,11 @@ public:
             active_cells.pop();
             is_active.clear(work_cell);
 
+            assert(coloring.m_cell_end[work_cell] != 0);
+
             size_t work_size = coloring.m_cell_end[work_cell] - work_cell;
             refineCells(work_cell, work_size, active_cells, is_active, invariant);
+
 #ifdef DEBUG_OUT
             std::cout << std::string(stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
 #endif
@@ -468,13 +492,13 @@ public:
         cell_idx = 0;
         while(cell_idx < coloring.size() && coloring.m_cell_end[cell_idx] - cell_idx == 1)
             cell_idx++;
+
         if(cell_idx == coloring.size())
             return Array<T>(0);
 
         auto beg_ptr = coloring.m_permutation.m_forward.m_data + cell_idx;
         auto end_ptr = coloring.m_permutation.m_forward.m_data + coloring.m_cell_end[cell_idx];
         Array<T> cell_content(end_ptr - beg_ptr);
-
         std::copy(beg_ptr, end_ptr, cell_content.m_data);
 
         return cell_content;

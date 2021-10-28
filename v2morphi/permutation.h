@@ -17,15 +17,20 @@ public:
     }
 
     void swap(T a, T b) {
+        assert(m_inverse[m_forward[a]] == a);
+        assert(m_inverse[m_forward[b]] == b);
         if(a != b) {
             std::swap(m_forward[a], m_forward[b]);
             std::swap(m_inverse[m_forward[a]], m_inverse[m_forward[b]]);
+            assert(m_inverse[m_forward[a]] == a);
+            assert(m_inverse[m_forward[b]] == b);
         }
     }
 
     void set(T idx, T val) {
         m_forward[idx] = val;
         m_inverse[val] = idx;
+        assert(m_inverse[m_forward[idx]] == idx);
     }
 
     const T& operator[](T idx) const {
