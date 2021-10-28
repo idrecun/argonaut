@@ -26,25 +26,29 @@ public:
         fromStream(input);
         m_canon = Permutation<uint32_t>(m_vertices);
 
-        if(opt.relabel) {
-            m_params.relabeling = Permutation<uint32_t>(m_vertices);
+        m_params.relabeling = Permutation<uint32_t>(m_vertices);
+        if(opt.relabel)
+            relabel();
+    }
 
-            // Generate random relabeling permutation
-            std::iota(m_params.relabeling.m_forward.m_data, m_params.relabeling.m_forward.m_end, 0);
-            std::random_shuffle(m_params.relabeling.m_forward.m_data, m_params.relabeling.m_forward.m_end);
+    void relabel() {
+        m_options.relabel = true;
 
-            // Calculate inverse permutation
-            for(size_t idx = 0; idx < m_vertices; idx++)
-                m_params.relabeling.m_inverse[m_params.relabeling.m_forward[idx]] = idx;
+        // Generate random relabeling permutation
+        std::iota(m_params.relabeling.m_forward.m_data, m_params.relabeling.m_forward.m_end, 0);
+        std::random_shuffle(m_params.relabeling.m_forward.m_data, m_params.relabeling.m_forward.m_end);
 
-            // Relabel coloring input
-            for(size_t idx = 0; idx < m_vertices; idx++)
-                m_colors[2 * idx] = m_params.relabeling[m_colors[2 * idx]];
+        // Calculate inverse permutation
+        for(size_t idx = 0; idx < m_vertices; idx++)
+            m_params.relabeling.m_inverse[m_params.relabeling.m_forward[idx]] = idx;
 
-            // Relabel graph input
-            for(size_t idx = 0; idx < 2 * m_edges; idx++)
-                m_edge_list[idx] = m_params.relabeling[m_edge_list[idx]];
-        }
+        // Relabel coloring input
+        for(size_t idx = 0; idx < m_vertices; idx++)
+            m_colors[2 * idx] = m_params.relabeling[m_colors[2 * idx]];
+
+        // Relabel graph input
+        for(size_t idx = 0; idx < 2 * m_edges; idx++)
+            m_edge_list[idx] = m_params.relabeling[m_edge_list[idx]];
     }
 
     void fromStream(std::istream& input) {
@@ -95,13 +99,26 @@ public:
 
         if(m_options.relabel) {
             for(size_t idx = 0; idx < m_vertices; idx++)
-                m_canon.set(idx, m_params.relabeling.m_inverse[m_canon[idx]]);
+                m_canon.set(idx, m_params.relabeling[m_canon[idx]]);
+        }
+
+        if(m_options.relabel) {
+            for(size_t i = 0; i < m_vertices; i++)
+                for(size_t j = 0; j < m_vertices; j++)
+                    std::cout << solver.graph.adjacent(m_canon.m_inverse[m_params.relabeling[i]], m_canon.m_inverse[m_params.relabeling[j]]);
+            std::cout << std::endl;
+        }
+        else {
+            for(size_t i = 0; i < m_vertices; i++)
+                for(size_t j = 0; j < m_vertices; j++)
+                    std::cout << solver.graph.adjacent(m_canon.m_inverse[i], m_canon.m_inverse[j]);
+            std::cout << std::endl;
         }
 #endif
     }
 
     void run() {
-        // gomilu if-else zavisno od opcija i velicine grafa
+        // gomilu if-else zavisno od opcija i velicine grafa?
         if(m_vertices <= 0xff)
             runWith< AlgorithmDFS<uint8_t, uint32_t> >();
         else if(m_vertices <= 0xffff)
