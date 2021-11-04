@@ -36,8 +36,7 @@ public:
     }
 
     Array(size_t size, const T& default_val) : Array(size) {
-        // if(default_val) - proveriti da li mmap postavlja nule
-            std::fill(m_data, m_end, default_val);
+        std::fill(m_data, m_end, default_val);
     }
 
     const T& operator[](size_t idx) const {

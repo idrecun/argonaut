@@ -8,6 +8,8 @@
 #include "coloring.h"
 #include "graph.h"
 #include "hash.h"
+#include "partition.h"
+#include "group.h"
 
 namespace morphi {
 
@@ -35,7 +37,8 @@ public:
           invariants(vertices),
           stabilized(vertices),
           max_node(vertices),
-          fst_node(vertices)
+          fst_node(vertices),
+          automorphisms(vertices, 500)
     {}
 
     const Permutation<T>& solve() {
@@ -44,14 +47,22 @@ public:
     }
 
     T solve(uint8_t flags) {
+
+        /*struct OnReturn {
+            AlgorithmDFS* m_context;
+            OnReturn(AlgorithmDFS* context) : m_context(context) {}
+            ~OnReturn() { m_context->unrefine(); }
+        } on_return(this);*/
+
         assert(invariants.m_size <= stabilized.m_size);
         T level = stabilized.m_size;
 #ifdef DEBUG_OUT
-        std::cout << std::string(level, ' ') << "I " << coloring << std::endl;
+        //std::cerr << std::string(level, ' ') << "I " << coloring << std::endl;
 #endif
         refine();
 #ifdef DEBUG_OUT
-        std::cout << std::string(level, ' ') << "R " << coloring << std::endl;
+        //std::cerr << std::string(level, ' ') << "R " << coloring << std::endl;
+        std::cerr << std::string(level, ' ') << (size_t) invariants.back() << std::endl;
 #endif
         /*
         if(!refine()) // zameniti sa refine() == BAD_PATH
@@ -59,14 +70,29 @@ public:
         */
 
         // update max_path, aut_path nodes
+        if(!fst_node.is_leaf)
+            fst_node.invariants.push(invariants.back());
+
         bool max_path = (flags & PathType::MaxPath) &&
-                       (max_node.invariants.m_size <= level ||
-                        invariants.back() >= max_node.invariants[level]);
-        if(!max_path) {
+                         (max_node.invariants.m_size <= level ||
+                          invariants.back() >= max_node.invariants[level]);
+        bool aut_path = (flags & PathType::AutPath) &&
+                        fst_node.invariants.m_size > level &&
+                        invariants.back() == fst_node.invariants[level];
+
+#ifdef DEBUG_OUT
+        std::cerr << std::string(level, ' ');
+        if(max_path) std::cerr << "MAX ";
+        if(aut_path) std::cerr << "AUT ";
+        if(!max_path && !aut_path) std::cerr << "BAD ";
+        std::cerr << std::endl;
+#endif
+
+        if(!max_path && !aut_path) {
             unrefine();
             return level;
         }
-        else {
+        if(max_path) {
             max_node.lca_level = level;
 
             if(max_node.invariants.m_size > level && invariants.back() > max_node.invariants[level])
@@ -78,23 +104,73 @@ public:
             }
         }
 
+        flags = 0;
+        flags |= max_path ? PathType::MaxPath : 0;
+        flags |= aut_path ? PathType::AutPath : 0;
+
+
         size_t cell_idx;
         Array<T> cell_content = targetCell(cell_idx);
+        Partition<T> orbit_partition(coloring.size());
+        size_t aut_counter = 0;
         for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++) {
+            if(ptr != cell_content.m_data) {
+                if(level != fst_node.lca_level) {
+                    automorphisms.updatePartition(stabilized, orbit_partition, aut_counter);
+                    if(orbit_partition.representative(*ptr) != *ptr)
+                        continue;
+                }
+                else if(automorphisms.m_orbit_partition.representative(*ptr) != *ptr)
+                    continue;
+            }
+
             individualize(cell_idx, *ptr);
             T backjump = solve(flags);
             unindividualize(cell_idx);
 
             if(level > backjump) {
                 unrefine();
-                return level;
+                return backjump;
             }
+
+            fst_node.lca_level = std::min(fst_node.lca_level, level);
+            max_node.lca_level = std::min(max_node.lca_level, level);
         }
 
         if(cell_content.m_size == 0) {
             if(max_path && (!max_node.is_leaf || (max_node.invariants.m_size == (size_t) level + 1 && graph.less(max_node.permutation, coloring.m_permutation.inverse())))) {
                 max_node.is_leaf = true;
+                max_node.lca_level = level;
                 max_node.permutation.copyInv(coloring.m_permutation);
+            }
+
+            if(!fst_node.is_leaf) {
+                fst_node.is_leaf = true;
+                fst_node.lca_level = level;
+                fst_node.permutation.copyInv(coloring.m_permutation);
+            }
+
+            Array<T> leaf_quotient(coloring.size());
+            if(fst_node.lca_level != level) {
+                for(size_t idx = 0; idx < leaf_quotient.m_size; idx++)
+                    leaf_quotient[idx] = fst_node.permutation.m_inverse[coloring.m_permutation.m_inverse[idx]];
+
+                if(graph.isAutomorphism(leaf_quotient)) {
+                    automorphisms.push(leaf_quotient);
+                    unrefine();
+                    return fst_node.lca_level;
+                }
+            }
+
+            if(max_node.lca_level != level) {
+                for(size_t idx = 0; idx < leaf_quotient.m_size; idx++)
+                    leaf_quotient[idx] = max_node.permutation.m_inverse[coloring.m_permutation.m_inverse[idx]];
+
+                if(graph.isAutomorphism(leaf_quotient)) {
+                    automorphisms.push(leaf_quotient);
+                    unrefine();
+                    return automorphisms.m_orbit_partition.representative(stabilized[fst_node.lca_level]) != stabilized[fst_node.lca_level] ? fst_node.lca_level : max_node.lca_level;
+                }
             }
         }
 
@@ -104,7 +180,7 @@ public:
 
     void individualize(size_t cell_idx, T vertex) {
 #ifdef DEBUG_OUT
-        std::cout << "individualize" << std::endl;
+        //std::cerr << "individualize" << std::endl;
 #endif
         assert(coloring.m_cell_end[cell_idx] - cell_idx > 1);
 
@@ -128,7 +204,7 @@ public:
     template<bool RootLevel>
     void refine1(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
 #ifdef DEBUG_OUT
-        std::cout << std::string(stabilized.m_size, ' ') << "refine1" << std::endl;
+        //std::cerr << std::string(stabilized.m_size, ' ') << "refine1" << std::endl;
 #endif
         if constexpr (!RootLevel)
             hash::sequential32u(invariant, work_cell);
@@ -161,6 +237,13 @@ public:
                         hash::sequential32u(invariant, 1);
                     }
                 }
+                else if constexpr (!RootLevel) {
+                    hash::sequential32u(invariant, cell_beg);
+                    if(split == cell_end)
+                        hash::sequential32u(invariant, 0);
+                    if(split == cell_beg)
+                        hash::sequential32u(invariant, 1);
+                }
 
                 if(cell_end < coloring.size()) {
                     cell_beg = split = cell_end;
@@ -182,7 +265,7 @@ public:
     template<bool RootLevel>
     void refine2(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
 #ifdef DEBUG_OUT
-        std::cout << std::string(stabilized.m_size, ' ') << "refine2" << std::endl;
+        //std::cerr << std::string(stabilized.m_size, ' ') << "refine2" << std::endl;
 #endif
         if constexpr (!RootLevel)
             hash::sequential32u(invariant, work_cell);
@@ -276,6 +359,15 @@ public:
                         }
                     }
                 }
+                else if constexpr (!RootLevel) {
+                    hash::sequential32u(invariant, cell_beg);
+                    if(split1 == cell_end)
+                        hash::sequential32u(invariant, 0);
+                    if(split1 == cell_beg && split2 == cell_end)
+                        hash::sequential32u(invariant, 1);
+                    if(split2 == cell_beg)
+                        hash::sequential32u(invariant, 2);
+                }
 
                 if(cell_end < coloring.size()) {
                     idx = cell_beg = split1 = cell_end;
@@ -298,7 +390,7 @@ public:
     template<bool RootLevel>
     void refineN(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
 #ifdef DEBUG_OUT
-        std::cout << std::string(stabilized.m_size, ' ') << "refineN" << std::endl;
+        //std::cerr << std::string(stabilized.m_size, ' ') << "refineN" << std::endl;
 #endif
 
         Array<T> adj_count(coloring.size(), 0);
@@ -363,7 +455,7 @@ public:
                             hash::sequential32u(invariant, adj_count[coloring[idx]]);
                         }
                         cell_prev = idx;
-            assert(cell_prev < coloring.size());
+                        assert(cell_prev < coloring.size());
 
                         active_cells.push(idx);
                         is_active.set(idx);
@@ -388,7 +480,7 @@ public:
                         if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
                             max_cell = cell_prev;
                         cell_prev = idx;
-            assert(cell_prev < coloring.size());
+                        assert(cell_prev < coloring.size());
                     }
                 }
                 if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
@@ -463,9 +555,23 @@ public:
             refineCells(work_cell, work_size, active_cells, is_active, invariant);
 
 #ifdef DEBUG_OUT
-            std::cout << std::string(stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
+            //std::cerr << std::string(stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
 #endif
         }
+
+#ifdef QT_QML_DEBUG
+        /*invariant = 0;
+        for(size_t cell = 0; cell < coloring.size(); cell = coloring.m_cell_end[cell]) {
+            hash::sequential32u(invariant, cell);
+            hash::sequential32u(invariant, coloring.cellSize(cell));
+            for(size_t oth_cell = 0; oth_cell < coloring.size(); oth_cell = coloring.m_cell_end[oth_cell]) {
+                T adj_count = 0;
+                for(size_t idx = cell; idx < coloring.m_cell_end[cell]; idx++)
+                    adj_count += graph.adjacent(coloring.m_permutation[oth_cell], coloring.m_permutation[idx]);
+                hash::sequential32u(invariant, adj_count);
+            }
+        }*/
+#endif
         invariants.push(invariant);
 
         return 0;
@@ -507,41 +613,6 @@ public:
 #ifdef QT_QML_DEBUG
     void test() {
 #ifdef DEBUG_OUT
-        /*for(size_t cell = 0; cell < graph.m_vertices; cell = coloring.m_cell_end[cell]) {
-            std::cout << (size_t)coloring.m_cell_level[cell] << "| ";
-            for(size_t idx = cell; idx < coloring.m_cell_end[cell]; idx++)
-                std::cout << (size_t) coloring.m_permutation[idx] << ' ';
-        }
-        std::cout << std::endl;
-
-        for(size_t vert = 0; vert < graph.m_vertices; vert++) {
-            std::cout << "Neighbors of " << vert << ": ";
-            for(auto ptr = graph.begin(vert); ptr != graph.end(vert); ptr++)
-                std::cout << (size_t)*ptr << ' ';
-            std::cout << std::endl;
-        }
-
-        for(size_t u = 0; u < graph.m_vertices; u++) {
-            for(size_t v = 0; v < graph.m_vertices; v++)
-                std::cout << graph.adjacent(u, v) << ' ';
-            std::cout << std::endl;
-        }
-
-        refine();
-        std::cout << coloring << std::endl;
-
-        individualize(5, 1);
-        std::cout << coloring << std::endl;
-
-        refine();
-        std::cout << coloring << std::endl;
-
-        unrefine();
-        std::cout << coloring << std::endl;
-
-        unindividualize(5);
-        std::cout << coloring << std::endl;*/
-
         solve();
 
         for(size_t u = 0; u < graph.m_vertices; u++) {
@@ -559,11 +630,13 @@ public:
     Coloring<T> coloring;
 
     // Algorithm state
-    Vector<T> invariants;
+    Vector<HashType> invariants;
     Vector<T> stabilized;
 
     NodePath max_node;
     NodePath fst_node;
+
+    Group<T> automorphisms;
 };
 
 } // namespace

@@ -59,9 +59,14 @@ public:
         return false;
     }
 
-    /*bool aut(const Permutation<T>& p) {
-
-    }*/
+    bool isAutomorphism(const Array<T>& p) {
+        for(T vertex = 0; vertex < m_vertices; vertex++)
+            for(auto neighbor_ptr = begin(vertex); neighbor_ptr != end(vertex); neighbor_ptr++) {
+                if(vertex < *neighbor_ptr && !adjacent(p[vertex], p[*neighbor_ptr]))
+                    return false;
+            }
+        return true;
+    }
 
     inline size_t matrixAt(size_t a, size_t b) const {
         assert(a != b);

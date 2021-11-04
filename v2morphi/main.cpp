@@ -82,7 +82,9 @@ void test_graph_single(std::string filename, unsigned num_passes) {
     std::cerr << "Finished initial pass for " << filename << std::endl;
     while(--num_passes) {
         selector.relabel();
+        clock_t start_time = clock();
         selector.run();
+        std::cerr << "Time elapsed: " << (double)(clock() - start_time) / CLOCKS_PER_SEC << std::endl;
         std::cerr << "Finished pass for " << filename << ". " << (num_passes - 1) << " passes left." << std::endl;
     }
 
@@ -111,14 +113,16 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-35",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-40",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-45",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-50",*/
+        "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-50",
         "/home/idrecun/repos/morphi/tests/undirected_dim/lattice/lattice-4",
         "/home/idrecun/repos/morphi/tests/undirected_dim/lattice/lattice-5",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/lattice/lattice-10",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-7",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-9",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-13",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-15",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-19",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-19",*/
+        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-8",
     };
     unsigned num_passes = 5;
     for(auto test_file : test_files) {
@@ -137,7 +141,7 @@ void test_graphs() {
 int main()
 {
     srand(time(0));
-    morphi::global_alloc.reserve(1ull << 20);
+    morphi::global_alloc.reserve(1ull << 28);
     // morphi::Array<int> arr = make_array();
 
     // test_permutation();

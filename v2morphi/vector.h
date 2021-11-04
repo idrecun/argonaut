@@ -2,6 +2,7 @@
 #define VECTOR_H
 
 #include "array.h"
+#include "bitarray.h"
 
 namespace morphi {
 

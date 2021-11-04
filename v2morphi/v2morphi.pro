@@ -17,8 +17,10 @@ HEADERS += \
     bitarray.h \
     coloring.h \
     graph.h \
+    group.h \
     hash.h \
     matrix.h \
     memory.h \
+    partition.h \
     permutation.h \
     vector.h
