@@ -49,12 +49,6 @@ public:
         std::copy(oth.m_inverse.m_data, oth.m_inverse.m_end, m_forward.m_data);
     }
 
-    Permutation<T> inverse() const {
-        Permutation<T> ret(m_forward.m_size);
-        ret.copyInv(*this);
-        return ret;
-    }
-
     Array<T> m_forward;
     Array<T> m_inverse;
 };

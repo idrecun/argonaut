@@ -5,6 +5,7 @@
 #include "bitarray.h"
 #include "partition.h"
 #include "permutation.h"
+#include "assertions.h"
 
 namespace morphi {
 
@@ -26,19 +27,9 @@ public:
         if(m_elements == m_max_elements)
             return;
 
-        /*std::cout << "aut ";
-        for(auto ptr = permutation.m_data; ptr != permutation.m_end; ptr++)
-            std::cout << (size_t) *ptr << ' ';
-        std::cout << std::endl;*/
-#ifdef DEBUG_OUT
-        std::clog << "Pushed" << std::endl;
-#endif
         assert(m_points == permutation.m_size);
-#ifdef QT_QML_DEBUG
-        Array<T> tmp(permutation.m_size);
-        std::copy(permutation.m_data, permutation.m_end, tmp.m_data);
-        std::sort(tmp.m_data, tmp.m_end);
-        assert(std::adjacent_find(tmp.m_data, tmp.m_end) == tmp.m_end);
+#ifdef DEBUG_SLOW_ASSERTS
+        assertArrayElementsDistinct(permutation);
 #endif
         size_t cycle_idx = m_elem_cycles_ptr[m_elements + 1] = m_elem_cycles_ptr[m_elements];
         BitArray visited(m_points);
@@ -49,16 +40,13 @@ public:
             else if(!visited[point]) {
                 while(!visited[point]) {
                     m_elem_cycles[cycle_idx++] = point;
-                    //std::clog << point << ' ';
                     m_orbit_partition.merge(point, permutation[point]);
                     visited.set(point);
                     point = permutation[point];
                 }
                 m_elem_cycles[cycle_idx++] = m_points;
-                //std::clog << m_points << ' ';
             }
         }
-        //std::clog << std::endl;
         m_elem_cycles_ptr[++m_elements] = cycle_idx;
         for(size_t idx = 0; idx < m_elements; idx++)
             assert(m_elem_cycles_ptr[idx] <= m_elem_cycles_ptr[idx + 1]);

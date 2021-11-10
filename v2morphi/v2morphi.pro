@@ -2,11 +2,11 @@ TEMPLATE = app
 CONFIG += console c++17
 CONFIG -= app_bundle
 CONFIG -= qt
-#QMAKE_CXXFLAGS += -O3
 
 debug {
     #DEFINES += DEBUG_OUT
     #DEFINES += DEBUG_NO_AUT
+    #DEFINES += DEBUG_SLOW_ASSERTS
 }
 
 SOURCES += \
@@ -16,6 +16,7 @@ HEADERS += \
     algorithm_selector.h \
     algorithms.h \
     array.h \
+    assertions.h \
     bitarray.h \
     coloring.h \
     graph.h \

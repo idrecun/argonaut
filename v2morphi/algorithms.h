@@ -10,6 +10,7 @@
 #include "hash.h"
 #include "partition.h"
 #include "group.h"
+#include "assertions.h"
 
 namespace morphi {
 
@@ -69,9 +70,6 @@ public:
         std::cerr << std::string(2 * level, ' ') << "I " << coloring << std::endl;
 #endif
         refine();
-        //std::cout << std::string(2 * level, ' ') << coloring << std::endl;
-        //if(stabilized.m_size == 0)
-        //    std::cerr << "R " << coloring << std::endl;
 #ifdef DEBUG_OUT
         std::cerr << std::string(2 * level, ' ') << "R " << coloring << std::endl;
         std::cerr << std::string(2 * level, ' ') << (size_t) invariants.back() << std::endl;
@@ -141,17 +139,11 @@ public:
                     automorphisms.updatePartition(stabilized, orbit_partition, aut_counter);
                     if(orbit_partition.mcr(*ptr) != *ptr) {
                         statistics.orbit_prunes++;
-                        //for(size_t idx = 0; idx < stabilized.m_size; idx++)
-                            //std::cout << stabilized[idx] << ' ';
-                        //std::cout << *ptr << std::endl;
                         continue;
                     }
                 }
                 else if(automorphisms.m_orbit_partition.mcr(*ptr) != *ptr) {
                     statistics.orbit_prunes++;
-                    //for(size_t idx = 0; idx < stabilized.m_size; idx++)
-                        //std::cout << stabilized[idx] << ' ';
-                    //std::cout << *ptr << std::endl;
                     continue;
                 }
             }
@@ -170,13 +162,6 @@ public:
         }
 
         if(cell_content.m_size == 0) {
-#ifdef QT_QML_DEBUG
-            /*if(max_path && max_node.is_leaf && (max_node.invariants.m_size != (size_t) level + 1 || graph.less(coloring.m_permutation.inverse(), max_node.permutation)))
-                statistics.bad_nodes++;
-
-            if(aut_path && fst_node.is_leaf && (fst_node.invariants.m_size != (size_t) level + 1 || graph.less(coloring.m_permutation.inverse(), fst_node.permutation) || graph.less(fst_node.permutation, coloring.m_permutation.inverse())))
-                statistics.bad_nodes++;*/
-#endif
             if(max_path && (!max_node.is_leaf || (max_node.invariants.m_size == (size_t) level + 1 && graph.less(max_node.permutation.m_inverse, coloring.m_permutation.m_forward)))) {
                 max_node.is_leaf = true;
                 max_node.lca_level = level;
@@ -226,9 +211,6 @@ public:
     }
 
     void individualize(size_t cell_idx, T vertex) {
-#ifdef DEBUG_OUT
-        //std::cerr << "individualize" << std::endl;
-#endif
         assert(coloring.m_cell_end[cell_idx] - cell_idx > 1);
 
         stabilized.push(vertex);
@@ -251,7 +233,7 @@ public:
     template<bool RootLevel>
     void refine1(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
 #ifdef DEBUG_OUT
-        //std::cerr << std::string(stabilized.m_size, ' ') << "refine1" << std::endl;
+        std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine1" << std::endl;
 #endif
         if constexpr (!RootLevel)
             hash::sequential32u(invariant, work_cell);
@@ -298,21 +280,15 @@ public:
                 }
             }
         }
-
-        for(size_t idx = 0; idx < coloring.size(); idx = coloring.m_cell_end[idx]) {
-            assert(coloring.m_cell_end[idx] > idx);
-            assert(coloring.m_cell_end[idx] <= coloring.size());
-        }
-        size_t sum = 0;
-        for(size_t idx = 0; idx < coloring.size(); idx++)
-            sum += coloring[idx];
-        assert(sum == coloring.size() * (coloring.size() - 1) / 2);
+#ifdef DEBUG_SLOW_ASSERTS
+        assertValidColoring(coloring);
+#endif
     }
 
     template<bool RootLevel>
     void refine2(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
 #ifdef DEBUG_OUT
-        //std::cerr << std::string(stabilized.m_size, ' ') << "refine2" << std::endl;
+        std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine2" << std::endl;
 #endif
         if constexpr (!RootLevel)
             hash::sequential32u(invariant, work_cell);
@@ -423,21 +399,15 @@ public:
                 else break;
             }
         }
-
-        for(size_t idx = 0; idx < coloring.size(); idx = coloring.m_cell_end[idx]) {
-            assert(coloring.m_cell_end[idx] > idx);
-            assert(coloring.m_cell_end[idx] <= coloring.size());
-        }
-        size_t sum = 0;
-        for(size_t idx = 0; idx < coloring.size(); idx++)
-            sum += coloring[idx];
-        assert(sum == coloring.size() * (coloring.size() - 1) / 2);
+#ifdef DEBUG_SLOW_ASSERTS
+        assertValidColoring(coloring);
+#endif
     }
 
     template<bool RootLevel>
     void refineN(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
 #ifdef DEBUG_OUT
-        //std::cerr << std::string(stabilized.m_size, ' ') << "refineN" << std::endl;
+        std::cerr << std::string(2 * stabilized.m_size, ' ') << "refineN" << std::endl;
 #endif
 
 #ifdef QT_QML_DEBUG
@@ -560,31 +530,13 @@ public:
                         is_active.set(cell_idx);
                     }
             }
-
-#ifdef QT_QML_DEBUG
-            for(size_t cell_idx = cell_beg; cell_idx != cell_end; cell_idx = coloring.m_cell_end[cell_idx]) {
-                if(cell_idx != cell_beg) {
-                    assert(adj_count[coloring[cell_idx]] != adj_count[coloring[cell_idx - 1]]);
-                    assert(coloring.m_cell_level[cell_idx] == stabilized.m_size);
-                }
-            }
+#ifdef DEBUG_SLOW_ASSERTS
+            assertCellSplittingValid(coloring, cell_beg, cell_end, adj_count, stabilized.m_size);
 #endif
         }
 
-#ifdef QT_QML_DEBUG
-        for(size_t cell = 0; cell < coloring.size(); cell = coloring.m_cell_end[cell]) {
-            for(size_t idx = cell + 1; idx < coloring.m_cell_end[cell]; idx++)
-                assert(adj_count[coloring[idx]] == adj_count[coloring[idx - 1]]);
-        }
-
-        for(size_t idx = 0; idx < coloring.size(); idx = coloring.m_cell_end[idx]) {
-            assert(coloring.m_cell_end[idx] > idx);
-            assert(coloring.m_cell_end[idx] <= coloring.size());
-        }
-        size_t sum = 0;
-        for(size_t idx = 0; idx < coloring.size(); idx++)
-            sum += coloring[idx];
-        assert(sum == coloring.size() * (coloring.size() - 1) / 2);
+#ifdef DEBUG_SLOW_ASSERTS
+        assertValidColoring(coloring);
 #endif
     }
 
@@ -615,14 +567,12 @@ public:
             T cell_idx = coloring.m_permutation.m_inverse[stabilized.back()];
             active_cells.push(cell_idx);
             is_active.set(cell_idx);
-
             assert(coloring.m_cell_end[cell_idx] != 0);
         }
         else {
             for(size_t cell_idx = 0; cell_idx != coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
                 active_cells.push(cell_idx);
                 is_active.set(cell_idx);
-
                 assert(coloring.m_cell_end[cell_idx] != 0);
             }
         }
@@ -638,47 +588,32 @@ public:
             size_t work_size = coloring.m_cell_end[work_cell] - work_cell;
             refineCells(work_cell, work_size, active_cells, is_active, invariant);
 
+#ifdef DEBUG_SLOW_ASSERTS
+            assertColoringSplittingValid(coloring, graph, work_cell, work_size);
+#endif
+
             size_t cell_idx = 0;
             while(coloring.cellSize(cell_idx) == 1)
-                cell_idx = coloring.m_cell_end[cell_idx];
+                cell_idx++;
             if(cell_idx == coloring.size())
                 break;
 
-#ifdef QT_QML_DEBUG
-            Array<T> tmp(coloring.size(), 0);
-            for(size_t idx = 0; idx < coloring.size(); idx++)
-                for(size_t jdx = work_cell; jdx < work_cell + work_size; jdx++)
-                    tmp[idx] += graph.adjacent(coloring[idx], coloring[jdx]);
-            for(size_t cell = 0; cell < coloring.size(); cell = coloring.m_cell_end[cell]) {
-                for(size_t idx = cell + 1; idx < coloring.m_cell_end[cell]; idx++)
-                    assert(tmp[idx] == tmp[idx - 1]);
-            }
-#endif
-
 #ifdef DEBUG_OUT
-            //std::cerr << std::string(stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
+            std::cerr << std::string(2 * stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
 #endif
         }
 
-#ifdef QT_QML_DEBUG
-        // proveri equitable
-        /*for(size_t cell1 = 0; cell1 < coloring.size(); cell1 = coloring.m_cell_end[cell1])
-            for(size_t cell2 = 0; cell2 < coloring.size(); cell2 = coloring.m_cell_end[cell2]) {
-                T cell1_adj_count = 0;
-                for(size_t idx = cell1; idx < coloring.m_cell_end[cell1]; idx++) {
-                    T adj_count = 0;
-                    for(size_t jdx = cell2; jdx < coloring.m_cell_end[cell2]; jdx++)
-                        adj_count += (T) graph.adjacent(coloring[idx], coloring[jdx]);
-                    if(idx == cell1)
-                        cell1_adj_count = adj_count;
-                    else
-                        assert(adj_count == cell1_adj_count);
-                }
-            }*/
+#ifdef DEBUG_SLOW_ASSERTS
+        assertEquitableColoring(coloring, graph);
 #endif
+        //invariant = calculatePartialQuotientInvariant();
+        invariants.push(invariant);
+    }
 
-        // kolicnicki graf invarijanta
-        /*invariant = 0;
+    HashType calculateQuotientInvariant() {
+        HashType invariant = 0;
+        if(stabilized.m_size == 0)
+            return invariant;
         for(size_t cell = 0; cell < coloring.size(); cell = coloring.m_cell_end[cell]) {
             hash::sequential32u(invariant, cell);
             hash::sequential32u(invariant, coloring.cellSize(cell));
@@ -688,36 +623,82 @@ public:
                     adj_count += graph.adjacent(coloring.m_permutation[oth_cell], coloring.m_permutation[idx]);
                 hash::sequential32u(invariant, adj_count);
             }
-        }*/
+        }
+        return invariant;
+    }
 
-        // morphi invarijanta
-        /*invariant = 0;
-        if(stabilized.m_size > 0) {
-            invariant = invariants.back();
-            struct pair { size_t cell; size_t color; };
-            Vector<pair> new_cells(coloring.size());
-            for(size_t cell_idx = 0, color = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx], color++) {
-                if(coloring[cell_idx] == stabilized.back() || (cell_idx > 0 && coloring[cell_idx - 1] == stabilized.back())) {
-                    new_cells.push({.cell = cell_idx, .color = color });
-                }
-                else if(coloring.m_cell_level[cell_idx] == stabilized.m_size ||
-                   (coloring.m_cell_end[cell_idx] < coloring.size() && coloring.m_cell_level[coloring.m_cell_end[cell_idx]] == stabilized.m_size))
-                    new_cells.push({.cell = cell_idx, .color = color });
+    HashType calculateMorphiInvariant() {
+        HashType invariant = 0;
+        if(stabilized.m_size == 0)
+            return invariant;
+        struct pair { size_t cell; size_t color; };
+        Vector<pair> new_cells(coloring.size());
+        for(size_t cell_idx = 0, color = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx], color++) {
+            if(coloring[cell_idx] == stabilized.back() || (cell_idx > 0 && coloring[cell_idx - 1] == stabilized.back())) {
+                new_cells.push({.cell = cell_idx, .color = color });
             }
+            else if(coloring.m_cell_level[cell_idx] == stabilized.m_size ||
+               (coloring.m_cell_end[cell_idx] < coloring.size() && coloring.m_cell_level[coloring.m_cell_end[cell_idx]] == stabilized.m_size))
+                new_cells.push({.cell = cell_idx, .color = color });
+        }
 
-            for(size_t idx = 0; idx < new_cells.m_size; idx++) {
-                hash::sequential32u(invariant, new_cells[idx].color);
-                hash::sequential32u(invariant, coloring.cellSize(new_cells[idx].cell));
-                for(size_t jdx = 0; jdx < new_cells.m_size; jdx++) {
-                    T adj_count = 0;
-                    for(size_t kdx = new_cells[idx].cell; kdx < coloring.m_cell_end[new_cells[idx].cell]; kdx++)
-                        adj_count += (uint8_t) graph.adjacent(coloring[new_cells[jdx].cell], coloring[kdx]);
-                    hash::sequential32u(invariant, adj_count);
-                }
+        for(size_t idx = 0; idx < new_cells.m_size; idx++) {
+            hash::sequential32u(invariant, new_cells[idx].color);
+            hash::sequential32u(invariant, coloring.cellSize(new_cells[idx].cell));
+            for(size_t jdx = 0; jdx < new_cells.m_size; jdx++) {
+                T adj_count = 0;
+                for(size_t kdx = new_cells[idx].cell; kdx < coloring.m_cell_end[new_cells[idx].cell]; kdx++)
+                    adj_count += (uint8_t) graph.adjacent(coloring[new_cells[jdx].cell], coloring[kdx]);
+                hash::sequential32u(invariant, adj_count);
             }
-        }*/
+        }
 
-        invariants.push(invariant);
+        return invariant;
+    }
+
+    HashType calculateCellSequenceInvariant() {
+        HashType invariant = 0;
+        if(stabilized.m_size == 0)
+            return invariant;
+        for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx++)
+            hash::sequential32u(invariant, cell_idx);
+        return invariant;
+    }
+
+    HashType calculateMultisetQuotientInvariant() {
+        auto hashTriple = [](HashType x, HashType y, HashType z) {
+            HashType hash = 0;
+            hash::sequential32u(hash, x);
+            hash::sequential32u(hash, y);
+            hash::sequential32u(hash, z);
+            return hash;
+        };
+        HashType invariant = 0;
+        for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
+            hash::multiset32add(invariant, cell_idx);
+            for(size_t cell_jdx = 0; cell_jdx < cell_idx; cell_jdx = coloring.m_cell_end[cell_idx]) {
+                HashType adj_count = 0;
+                for(size_t idx = cell_jdx; idx < coloring.m_cell_end[cell_jdx]; idx++)
+                    adj_count += graph.adjacent(coloring[cell_idx], coloring[idx]);
+                hash::multiset32add(invariant, hashTriple(cell_idx, cell_jdx, adj_count));
+            }
+        }
+        return invariant;
+    }
+
+    HashType calculatePartialQuotientInvariant() {
+        HashType invariant = invariants.back();
+        for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
+            hash::sequential32u(invariant, cell_idx);
+            for(size_t cell_jdx = 0; cell_jdx < cell_idx; cell_jdx = coloring.m_cell_end[cell_jdx]) {
+                HashType adj_count = 0;
+                for(size_t idx = cell_jdx; idx < coloring.m_cell_end[cell_jdx]; idx++)
+                    adj_count += graph.adjacent(coloring[cell_idx], coloring[idx]);
+                hash::sequential32u(invariant, adj_count);
+                //hash::multiset32add(invariant, hashTriple(cell_idx, cell_jdx, adj_count));
+            }
+        }
+        return invariant;
     }
 
     void unrefine() {
@@ -753,21 +734,6 @@ public:
 
         return cell_content;
     }
-
-#ifdef QT_QML_DEBUG
-    void test() {
-#ifdef DEBUG_OUT
-        solve();
-
-        /*for(size_t u = 0; u < graph.m_vertices; u++) {
-            for(size_t v = 0; v < graph.m_vertices; v++)
-                std::cout << graph.adjacent(max_node.permutation.m_inverse[u], max_node.permutation.m_inverse[v]) << ' ';
-            std::cout << std::endl;
-        }*/
-#endif
-
-    }
-#endif
 
     // Algorithm input
     Graph<T> graph;

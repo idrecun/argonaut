@@ -5,6 +5,18 @@
 
 namespace morphi::hash {
 
+uint16_t hash16(uint16_t value) {
+    value++;
+    value ^= value >> 7;
+    value *= 0x2993U;
+    value ^= value >> 5;
+    value *= 0xe877U;
+    value ^= value >> 9;
+    value *= 0x0235U;
+    value ^= value >> 10;
+    return value;
+}
+
 uint32_t hash32(uint32_t value) {
     value++;
     value ^= value >> 17;
@@ -19,22 +31,24 @@ uint32_t hash32(uint32_t value) {
 
 uint32_t sequential32(uint32_t prev_hash, uint32_t value) {
     return hash32(prev_hash ^ value);
-    //return prev_hash ^ (value + 0x9e3779b9 + (prev_hash << 6) + (prev_hash >> 2));
 }
 
 void sequential32u(uint32_t& prev_hash, uint32_t value) {
     prev_hash = sequential32(prev_hash, value);
 }
 
-/*
 uint32_t multiset32(uint32_t prev_hash, uint32_t value) {
     return prev_hash + hash32(value) + 1;
 }
 
-void multiset32u(uint32_t& prev_hash, uint32_t value) {
-    prev_hash = multiset32(prev_hash, value);
+void multiset32add(uint32_t& prev_hash, uint32_t value) {
+    prev_hash += hash32(value) + 1;
+    //prev_hash = multiset32(prev_hash, value);
 }
-*/
+
+void multiset32sub(uint32_t& prev_hash, uint32_t value) {
+    prev_hash -= hash32(value) + 1;
+}
 
 } // namespace
 

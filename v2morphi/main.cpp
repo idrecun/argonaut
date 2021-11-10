@@ -30,7 +30,8 @@ void test_permutation() {
         std::cout << p.m_inverse[i] << ' ';
     std::cout << std::endl;
 
-    morphi::Permutation<uint32_t> q = p.inverse();
+    morphi::Permutation<uint32_t> q(p.m_forward.m_size);
+    q.copyInv(p);
 
     std::cout << "Inverse permutation (p.inverse(), operator[]): ";
     for(size_t i = 0; i < 4; i++)
@@ -217,7 +218,7 @@ void test_graph_single(std::string filename, unsigned num_passes) {
 
 void test_graphs() {
     std::string test_files[] = {
-        /*"/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-2",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-2",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-3",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-4",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-5",
@@ -297,7 +298,7 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-43",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-49",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-55",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-61",
+        /*"/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-61",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-67",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-73",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-79",*/
@@ -324,53 +325,13 @@ int main()
 {
     srand(time(0));
     morphi::global_alloc.reserve(1ull << 30);
-    // morphi::Array<int> arr = make_array();
 
+    // morphi::Array<int> arr = make_array();
     // test_permutation();
     // test_bitarray_onebyte();
-
-    /*
-    std::string test_input_nonorbit =
-            "c lorem ipsum dolor sit amet\n"
-            "p edge 8 9\n"
-            "e 1 2\n"
-            "e 2 3\n"
-            "e 3 1\n"
-            "e 3 4\n"
-            "e 4 5\n"
-            "e 5 6\n"
-            "e 6 7\n"
-            "e 6 8\n"
-            "e 8 7\n";
-    std::string test_input_moresteps =
-            "p edge 7 8\n"
-            "e 1 2\n"
-            "e 3 2\n"
-            "e 3 4\n"
-            "e 5 4\n"
-            "e 5 6\n"
-            "e 7 6\n"
-            "e 7 1\n"
-            "e 2 7\n";
-    std::stringstream sstream(test_input_moresteps);
-
-    std::fstream infile;
-    infile.open("/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-15");
-    morphi::AlgorithmSelector selector(infile, {.relabel = true});
-    infile.close();
-
-    selector.run();
-
-#ifndef DEBUG_OUT
-    for(auto ptr = selector.m_canon.m_forward.m_data; ptr != selector.m_canon.m_forward.m_end; ptr++)
-        std::cout << (size_t) *ptr << ' ';
-    std::cout << std::endl;
-#endif
-    */
-
     test_graphs();
-    //test_partition();
-    //test_group();
+    // test_partition();
+    // test_group();
 
     return 0;
 }

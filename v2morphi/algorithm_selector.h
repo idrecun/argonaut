@@ -92,9 +92,7 @@ public:
     template<typename AlgorithmType>
     void runWith() {
         AlgorithmType solver(m_vertices, m_edges, m_edge_list, m_colors);
-#ifdef DEBUG_OUT
-        solver.test();
-#else
+
         m_canon.copyFwd(solver.solve());
 
         if(m_options.relabel) {
@@ -114,7 +112,6 @@ public:
                     std::cout << solver.graph.adjacent(m_canon.m_inverse[i], m_canon.m_inverse[j]);
             std::cout << std::endl;
         }
-#endif
     }
 
     void run() {

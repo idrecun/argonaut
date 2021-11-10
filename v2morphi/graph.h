@@ -6,6 +6,7 @@
 #include "array.h"
 #include "bitarray.h"
 #include "permutation.h"
+#include "assertions.h"
 
 namespace morphi {
 
@@ -45,7 +46,7 @@ public:
         return begin(vertex + 1);
     }
 
-    // Compares G^inv(a) and G^inv(b)
+    // Compares G^a and G^b
     // a, b are expected to be inverse permutations
     bool less(const Array<T>& a_inverse, const Array<T>& b_inverse) const {
         uint8_t aij, bij;
@@ -74,22 +75,11 @@ public:
         assert(a != b);
         if(a > b)
             std::swap(a, b);
-        size_t res = a * (2 * m_vertices - a - 1) / 2 + b - a - 1;
-#ifdef QT_QML_DEBUG
-        /*size_t i = 0;
-        size_t j = 0;
-        size_t len = 0;
-        size_t row = m_vertices - 1;
-        while(len + row <= res) {
-            len += row;
-            row--;
-            i++;
-        }
-        j = i + 1 + res - len;
-        assert(a == i);
-        assert(b == j);*/
+        size_t idx = a * (2 * m_vertices - a - 1) / 2 + b - a - 1;
+#ifdef DEBUG_SLOW_ASSERTS
+        assertBitMatrixIndex(a, b, idx, m_vertices);
 #endif
-        return res;
+        return idx;
     }
 
     size_t m_vertices;
