@@ -2,9 +2,11 @@ TEMPLATE = app
 CONFIG += console c++17
 CONFIG -= app_bundle
 CONFIG -= qt
+#QMAKE_CXXFLAGS += -O3
 
 debug {
     #DEFINES += DEBUG_OUT
+    #DEFINES += DEBUG_NO_AUT
 }
 
 SOURCES += \

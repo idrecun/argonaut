@@ -19,12 +19,14 @@ uint32_t hash32(uint32_t value) {
 
 uint32_t sequential32(uint32_t prev_hash, uint32_t value) {
     return hash32(prev_hash ^ value);
+    //return prev_hash ^ (value + 0x9e3779b9 + (prev_hash << 6) + (prev_hash >> 2));
 }
 
 void sequential32u(uint32_t& prev_hash, uint32_t value) {
     prev_hash = sequential32(prev_hash, value);
 }
 
+/*
 uint32_t multiset32(uint32_t prev_hash, uint32_t value) {
     return prev_hash + hash32(value) + 1;
 }
@@ -32,6 +34,7 @@ uint32_t multiset32(uint32_t prev_hash, uint32_t value) {
 void multiset32u(uint32_t& prev_hash, uint32_t value) {
     prev_hash = multiset32(prev_hash, value);
 }
+*/
 
 } // namespace
 

@@ -52,7 +52,7 @@ std::ostream& operator<<(std::ostream& output, const Coloring<T>& c) {
     for(size_t cell = 0; cell < c.size(); cell = c.m_cell_end[cell]) {
         if(cell > 0)
             output << ']';
-        output << (size_t)c.m_cell_level[cell] << "[ ";
+        output << /*(size_t)c.m_cell_level[cell] <<*/ "[ ";
         for(size_t idx = cell; idx < c.m_cell_end[cell]; idx++)
             output << (size_t) c.m_permutation[idx] << ' ';
     }

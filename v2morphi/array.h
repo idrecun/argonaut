@@ -29,6 +29,7 @@ public:
         m_end(std::exchange(oth.m_end, nullptr)),
         m_size(std::exchange(oth.m_size, 0)) {}
     Array& operator=(Array&& oth) {
+        assert(m_size == 0);
         std::swap(m_data, oth.m_data);
         std::swap(m_end, oth.m_end);
         std::swap(m_size, oth.m_size);

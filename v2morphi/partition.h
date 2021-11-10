@@ -13,16 +13,22 @@ class Partition {
 public:
 
     struct PartitionClass {
+        T point;
         T size;
         T parent;
     };
 
     Partition(size_t size) : m_partition(size) {
         for(size_t idx = 0; idx < size; idx++)
-            m_partition[idx] = {.size = 1, .parent = (T) idx};
+            m_partition[idx] = {.point = (T) idx, .size = 1, .parent = (T) idx};
+    }
+
+    T mcr(T elem) {
+        return m_partition[representative(elem)].point;
     }
 
     T representative(T elem) {
+        assert(elem < m_partition.m_size);
         Vector<T> path(m_partition.m_size);
         while(elem != m_partition[elem].parent) {
             path.push(elem);
@@ -44,10 +50,16 @@ public:
         if(m_partition[pa].size < m_partition[pb].size) {
             m_partition[pa].parent = pb;
             m_partition[pb].size += m_partition[pa].size;
+            m_partition[pb].point = std::min(m_partition[pa].point, m_partition[pb].point);
+            /*if(m_partition[pa].point < m_partition[pb].point)
+                std::swap(m_partition[pa].point, m_partition[pb].point);*/
         }
         else {
             m_partition[pb].parent = pa;
-            m_partition[pa].size += m_partition[pa].size;
+            m_partition[pa].size += m_partition[pb].size;
+            m_partition[pa].point = std::min(m_partition[pa].point, m_partition[pb].point);
+            /*if(m_partition[pb].point < m_partition[pa].point)
+                std::swap(m_partition[pa].point, m_partition[pb].point);*/
         }
     }
 

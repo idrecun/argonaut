@@ -25,6 +25,11 @@ public:
     void push(const Array<T>& permutation) {
         if(m_elements == m_max_elements)
             return;
+
+        /*std::cout << "aut ";
+        for(auto ptr = permutation.m_data; ptr != permutation.m_end; ptr++)
+            std::cout << (size_t) *ptr << ' ';
+        std::cout << std::endl;*/
 #ifdef DEBUG_OUT
         std::clog << "Pushed" << std::endl;
 #endif
@@ -63,7 +68,7 @@ public:
         for(; elem_idx < m_elements; elem_idx++) {
             bool stabilizes = true;
             for(size_t idx = 0; idx < stabilized.m_size; idx++)
-                if(!m_elem_fixed_points[stabilized[idx]]) {
+                if(!m_elem_fixed_points[fixedPointIndex(elem_idx, stabilized[idx])]) {
                     stabilizes = false;
                     break;
                 }

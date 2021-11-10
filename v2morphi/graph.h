@@ -47,12 +47,12 @@ public:
 
     // Compares G^inv(a) and G^inv(b)
     // a, b are expected to be inverse permutations
-    bool less(const Permutation<T>& a, const Permutation<T>& b) const {
+    bool less(const Array<T>& a_inverse, const Array<T>& b_inverse) const {
         uint8_t aij, bij;
         for(size_t i = 0; i < m_vertices; i++)
-            for(size_t j = 0; j < m_vertices; j++) {
-                aij = adjacent(a.m_inverse[i], a.m_inverse[j]);
-                bij = adjacent(b.m_inverse[i], b.m_inverse[j]);
+            for(size_t j = i + 1; j < m_vertices; j++) {
+                aij = adjacent(a_inverse[i], a_inverse[j]);
+                bij = adjacent(b_inverse[i], b_inverse[j]);
                 if(aij < bij) return true;
                 if(aij > bij) return false;
             }
@@ -69,10 +69,27 @@ public:
     }
 
     inline size_t matrixAt(size_t a, size_t b) const {
+        assert(a < m_vertices);
+        assert(b < m_vertices);
         assert(a != b);
         if(a > b)
             std::swap(a, b);
-        return a * (2 * m_vertices - a - 1) / 2 + b - a - 1;
+        size_t res = a * (2 * m_vertices - a - 1) / 2 + b - a - 1;
+#ifdef QT_QML_DEBUG
+        /*size_t i = 0;
+        size_t j = 0;
+        size_t len = 0;
+        size_t row = m_vertices - 1;
+        while(len + row <= res) {
+            len += row;
+            row--;
+            i++;
+        }
+        j = i + 1 + res - len;
+        assert(a == i);
+        assert(b == j);*/
+#endif
+        return res;
     }
 
     size_t m_vertices;
