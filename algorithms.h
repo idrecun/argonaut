@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include "vector.h"
+#include "matrix.h"
 #include "bitarray.h"
 #include "coloring.h"
 #include "graph.h"
@@ -35,11 +36,12 @@ public:
     AlgorithmDFS(size_t vertices, size_t edges, Array<uint32_t>& edge_list, Array<uint32_t>& colors)
         : graph(vertices, edges, edge_list.m_data),
           coloring(vertices, colors.m_data),
-          invariants(vertices),
+          invariants(vertices + 1),
           stabilized(vertices),
           max_node(vertices),
           fst_node(vertices),
-          automorphisms(vertices, 500)
+          automorphisms(vertices, 500),
+          quotient_graph(vertices)
     {}
 
     const Permutation<T>& solve() {
@@ -221,7 +223,7 @@ public:
         coloring.m_cell_end[cell_idx + 1] = coloring.m_cell_end[cell_idx];
         coloring.m_cell_end[cell_idx] = cell_idx + 1;
 
-        coloring.m_cell_level[cell_idx + 1] = stabilized.m_size - 1;
+        coloring.m_cell_level[cell_idx + 1] = stabilized.m_size;
     }
 
     void unindividualize(size_t cell_idx) {
@@ -606,7 +608,8 @@ public:
 #ifdef DEBUG_SLOW_ASSERTS
         assertEquitableColoring(coloring, graph);
 #endif
-        //invariant = calculatePartialQuotientInvariant();
+        invariant = calculatePartialQuotientInvariant();
+        //invariant = calculateMultisetQuotientInvariant();
         invariants.push(invariant);
     }
 
@@ -676,26 +679,100 @@ public:
         HashType invariant = 0;
         for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
             hash::multiset32add(invariant, cell_idx);
-            for(size_t cell_jdx = 0; cell_jdx < cell_idx; cell_jdx = coloring.m_cell_end[cell_idx]) {
+            for(size_t cell_jdx = 0; cell_jdx <= cell_idx; cell_jdx = coloring.m_cell_end[cell_jdx]) {
                 HashType adj_count = 0;
                 for(size_t idx = cell_jdx; idx < coloring.m_cell_end[cell_jdx]; idx++)
                     adj_count += graph.adjacent(coloring[cell_idx], coloring[idx]);
-                hash::multiset32add(invariant, hashTriple(cell_idx, cell_jdx, adj_count));
+                hash::multiset32add(invariant, hashTriple(cell_jdx, cell_idx, adj_count));
+                quotient_graph.set(cell_jdx, cell_idx, adj_count);
             }
         }
         return invariant;
     }
 
     HashType calculatePartialQuotientInvariant() {
+        if(stabilized.m_size == 0)
+            return calculateMultisetQuotientInvariant();
+        auto hashTriple = [](HashType x, HashType y, HashType z) {
+            HashType hash = 0;
+            hash::sequential32u(hash, x);
+            hash::sequential32u(hash, y);
+            hash::sequential32u(hash, z);
+            return hash;
+        };
         HashType invariant = invariants.back();
+        BitArray is_old(coloring.size());
+        BitArray is_new(coloring.size());
+        Vector<size_t> old_cells(coloring.size());
+        Vector<size_t> new_cells(coloring.size());
         for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
-            hash::sequential32u(invariant, cell_idx);
-            for(size_t cell_jdx = 0; cell_jdx < cell_idx; cell_jdx = coloring.m_cell_end[cell_jdx]) {
-                HashType adj_count = 0;
-                for(size_t idx = cell_jdx; idx < coloring.m_cell_end[cell_jdx]; idx++)
-                    adj_count += graph.adjacent(coloring[cell_idx], coloring[idx]);
-                hash::sequential32u(invariant, adj_count);
-                //hash::multiset32add(invariant, hashTriple(cell_idx, cell_jdx, adj_count));
+            size_t cell_end = coloring.m_cell_end[cell_idx];
+            if(coloring.m_cell_level[cell_idx] < stabilized.m_size)
+                is_old.set(cell_idx);
+            if(coloring.m_cell_level[cell_idx] == stabilized.m_size ||
+               (cell_end < coloring.size() && coloring.m_cell_level[cell_end] == stabilized.m_size))
+                is_new.set(cell_idx);
+            if(is_old[cell_idx] && !is_new[cell_idx])
+                old_cells.push(cell_idx);
+            if(is_new[cell_idx])
+                new_cells.push(cell_idx);
+            if(is_new[cell_idx] && !is_old[cell_idx])
+                hash::multiset32add(invariant, cell_idx);
+        }
+        // Update Old <- New and New <- Old
+        for(size_t old_idx = 0; old_idx < old_cells.m_size; old_idx++) {
+            size_t old_cell = old_cells[old_idx];
+            T prev_adj_count = 0;
+            size_t prev_cell_size = 0;
+            for(size_t new_idx = 0; new_idx < new_cells.m_size; new_idx++) {
+                size_t new_cell = new_cells[new_idx];
+                assert(new_cell != old_cell);
+                if(new_cell < old_cell) {
+                    if(is_old[new_cell]) {
+                        prev_adj_count = quotient_graph.at(new_cell, old_cell);
+                        size_t new_cell_end = coloring.m_cell_end[new_cell];
+                        while(new_cell_end < coloring.size() && coloring.m_cell_level[new_cell_end] == stabilized.m_size)
+                            new_cell_end = coloring.m_cell_end[new_cell_end];
+                        prev_cell_size = new_cell_end - new_cell;
+                        assert(prev_cell_size > 0);
+                        hash::multiset32sub(invariant, hashTriple(new_cell, old_cell, prev_adj_count));
+                    }
+                    size_t new_cell_size = coloring.cellSize(new_cell);
+                    T adj_count = (T) (prev_adj_count * new_cell_size / prev_cell_size);
+
+                    // samo za test
+                    T actual_adj_count = 0;
+                    for(size_t kdx = new_cell; kdx < coloring.m_cell_end[new_cell]; kdx++)
+                        actual_adj_count += graph.adjacent(coloring[kdx], coloring[old_cell]);
+                    assert(actual_adj_count == adj_count);
+                    // ............
+
+                    quotient_graph.set(new_cell, old_cell, adj_count);
+                    hash::multiset32add(invariant, hashTriple(new_cell, old_cell, adj_count));
+                }
+                else {
+                    if(is_old[new_cell]) {
+                        prev_adj_count = quotient_graph.at(old_cell, new_cell);
+                    }
+                    else {
+                        hash::multiset32add(invariant, hashTriple(old_cell, new_cell, prev_adj_count));
+                        quotient_graph.set(old_cell, new_cell, prev_adj_count);
+                    }
+                }
+            }
+        }
+        // Update New <- New
+        for(size_t idx = 0; idx < new_cells.m_size; idx++) {
+            size_t cell_idx = new_cells[idx];
+            for(size_t jdx = 0; jdx <= idx; jdx++) {
+                size_t cell_jdx = new_cells[jdx];
+                if(is_old[cell_idx] && is_old[cell_jdx])
+                    hash::multiset32sub(invariant, hashTriple(cell_jdx, cell_idx, quotient_graph.at(cell_jdx, cell_idx)));
+                T adj_count = 0;
+                for(size_t kdx = cell_jdx; kdx < coloring.m_cell_end[cell_jdx]; kdx++)
+                    adj_count += graph.adjacent(coloring[kdx], coloring[cell_idx]);
+                hash::multiset32add(invariant, hashTriple(cell_jdx, cell_idx, adj_count));
+                quotient_graph.set(cell_jdx, cell_idx, adj_count);
             }
         }
         return invariant;
@@ -705,7 +782,7 @@ public:
         size_t cell_beg = 0, cell_end = coloring.m_cell_end[0];
         size_t level = stabilized.m_size;
         while(cell_end != coloring.size()) {
-            if(coloring.m_cell_level[cell_end] >= level) {
+            if(coloring.m_cell_level[cell_end] >= level && (level == 0 || coloring[cell_beg] != stabilized.back())) {
                 cell_end = coloring.m_cell_end[cell_end];
                 coloring.m_cell_end[cell_beg] = cell_end;
             }
@@ -747,6 +824,7 @@ public:
     NodePath fst_node;
 
     Group<T> automorphisms;
+    SymmetricMatrix<T> quotient_graph;
 
     // Statistics
     struct Statistics {

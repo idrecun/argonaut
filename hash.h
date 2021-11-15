@@ -2,6 +2,7 @@
 #define HASH_H
 
 #include <cstdint>
+#include <iostream>
 
 namespace morphi::hash {
 

@@ -7,6 +7,7 @@
 #include "algorithms.h"
 #include "algorithm_selector.h"
 #include "group.h"
+#include "hash.h"
 
 void test_permutation() {
     morphi::Permutation<uint32_t> p(4);
@@ -111,6 +112,20 @@ void test_partition() {
     for(size_t i = 0; i < n; i++)
         std::cout << p.representative(i) << ' ';
     std::cout << std::endl;
+}
+
+void test_multiset_hash() {
+    uint32_t h = 0;
+    morphi::hash::multiset32add(h, 123);
+    std::cerr << h << std::endl;
+    morphi::hash::multiset32add(h, 15);
+    std::cerr << h << std::endl;
+    morphi::hash::multiset32sub(h, 123);
+    std::cerr << h << std::endl;
+    morphi::hash::multiset32sub(h, 15);
+    std::cerr << h << std::endl;
+    morphi::hash::multiset32add(h, 15);
+    std::cerr << h << std::endl;
 }
 
 void test_group() {
@@ -218,6 +233,9 @@ void test_graph_single(std::string filename, unsigned num_passes) {
 
 void test_graphs() {
     std::string test_files[] = {
+        "/home/idrecun/repos/argonaut/graphs/milan.bliss",
+        "/home/idrecun/repos/argonaut/graphs/regular.bliss",
+        "/home/idrecun/repos/argonaut/graphs/k33.bliss",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-2",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-3",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-4",
@@ -302,10 +320,6 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-67",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-73",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-79",*/
-
-        //"/home/idrecun/repos/v2morphi/graphs/milan.bliss",
-        //"/home/idrecun/repos/v2morphi/graphs/regular.bliss",
-        //"/home/idrecun/repos/v2morphi/graphs/k33.bliss",
     };
     unsigned num_passes = 3;
     for(auto test_file : test_files) {
@@ -332,6 +346,7 @@ int main()
     test_graphs();
     // test_partition();
     // test_group();
+    // test_multiset_hash();
 
     return 0;
 }
