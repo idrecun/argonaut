@@ -83,6 +83,14 @@ void assertEquitableColoring(const Coloring<T>& coloring, const GraphT& graph) {
         }
 }
 
+template<typename T, typename GraphT>
+void assertCellAdjCount(T adj_count, size_t cell_beg, size_t cell_end, size_t cell_oth, const Coloring<T>& coloring, const GraphT& graph) {
+    T actual_adj_count = 0;
+    for(size_t idx = cell_beg; idx < cell_end; idx++)
+        actual_adj_count += graph.adjacent(coloring[idx], coloring[cell_oth]);
+    assert(adj_count == actual_adj_count);
+}
+
 }
 #endif // ASSERTIONS_H
 

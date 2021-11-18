@@ -608,7 +608,7 @@ public:
 #ifdef DEBUG_SLOW_ASSERTS
         assertEquitableColoring(coloring, graph);
 #endif
-        invariant = calculatePartialQuotientInvariant();
+        invariant = calculateQuotientInvariantIncrement();
         //invariant = calculateMultisetQuotientInvariant();
         invariants.push(invariant);
     }
@@ -690,7 +690,7 @@ public:
         return invariant;
     }
 
-    HashType calculatePartialQuotientInvariant() {
+    HashType calculateQuotientInvariantIncrement() {
         if(stabilized.m_size == 0)
             return calculateMultisetQuotientInvariant();
         auto hashTriple = [](HashType x, HashType y, HashType z) {
@@ -719,6 +719,15 @@ public:
             if(is_new[cell_idx] && !is_old[cell_idx])
                 hash::multiset32add(invariant, cell_idx);
         }
+        /*std::cerr << "Depth: " << stabilized.m_size << std::endl;
+        std::cerr << "Old cells: ";
+        for(size_t idx = 0; idx < old_cells.m_size; idx++)
+            std::cerr << old_cells[idx] << ' ';
+        std::cerr << std::endl;
+        std::cerr << "New cells: ";
+        for(size_t idx = 0; idx < new_cells.m_size; idx++)
+            std::cerr << new_cells[idx] << ' ';
+        std::cerr << std::endl;*/
         // Update Old <- New and New <- Old
         for(size_t old_idx = 0; old_idx < old_cells.m_size; old_idx++) {
             size_t old_cell = old_cells[old_idx];
@@ -730,23 +739,25 @@ public:
                 if(new_cell < old_cell) {
                     if(is_old[new_cell]) {
                         prev_adj_count = quotient_graph.at(new_cell, old_cell);
+
                         size_t new_cell_end = coloring.m_cell_end[new_cell];
-                        while(new_cell_end < coloring.size() && coloring.m_cell_level[new_cell_end] == stabilized.m_size)
+                        while(new_cell_end < coloring.size() && !is_old[new_cell_end]/*coloring.m_cell_level[new_cell_end] == stabilized.m_size*/)
                             new_cell_end = coloring.m_cell_end[new_cell_end];
                         prev_cell_size = new_cell_end - new_cell;
                         assert(prev_cell_size > 0);
+
+#ifdef DEBUG_SLOW_ASSERTS
+                        assertCellAdjCount(prev_adj_count, new_cell, new_cell_end, old_cell, coloring, graph);
+#endif
+
                         hash::multiset32sub(invariant, hashTriple(new_cell, old_cell, prev_adj_count));
                     }
                     size_t new_cell_size = coloring.cellSize(new_cell);
                     T adj_count = (T) (prev_adj_count * new_cell_size / prev_cell_size);
 
-                    // samo za test
-                    T actual_adj_count = 0;
-                    for(size_t kdx = new_cell; kdx < coloring.m_cell_end[new_cell]; kdx++)
-                        actual_adj_count += graph.adjacent(coloring[kdx], coloring[old_cell]);
-                    assert(actual_adj_count == adj_count);
-                    // ............
-
+#ifdef DEBUG_SLOW_ASSERTS
+                    assertCellAdjCount(adj_count, new_cell, coloring.m_cell_end[new_cell], old_cell, coloring, graph);
+#endif
                     quotient_graph.set(new_cell, old_cell, adj_count);
                     hash::multiset32add(invariant, hashTriple(new_cell, old_cell, adj_count));
                 }
@@ -755,6 +766,9 @@ public:
                         prev_adj_count = quotient_graph.at(old_cell, new_cell);
                     }
                     else {
+#ifdef DEBUG_SLOW_ASSERTS
+                        assertCellAdjCount(prev_adj_count, old_cell, coloring.m_cell_end[old_cell], new_cell, coloring, graph);
+#endif
                         hash::multiset32add(invariant, hashTriple(old_cell, new_cell, prev_adj_count));
                         quotient_graph.set(old_cell, new_cell, prev_adj_count);
                     }
@@ -771,14 +785,111 @@ public:
                 T adj_count = 0;
                 for(size_t kdx = cell_jdx; kdx < coloring.m_cell_end[cell_jdx]; kdx++)
                     adj_count += graph.adjacent(coloring[kdx], coloring[cell_idx]);
+#ifdef DEBUG_SLOW_ASSERTS
+                assertCellAdjCount(adj_count, cell_jdx, coloring.m_cell_end[cell_jdx], cell_idx, coloring, graph);
+#endif
                 hash::multiset32add(invariant, hashTriple(cell_jdx, cell_idx, adj_count));
                 quotient_graph.set(cell_jdx, cell_idx, adj_count);
             }
         }
+#ifdef DEBUG_SLOW_ASSERTS
+        assert(invariant == calculateMultisetQuotientInvariant());
+#endif
         return invariant;
     }
 
+    void calculateQuotientInvariantDecrement() {
+        if(stabilized.m_size == 0)
+            return;
+        auto hashTriple = [](HashType x, HashType y, HashType z) {
+            HashType hash = 0;
+            hash::sequential32u(hash, x);
+            hash::sequential32u(hash, y);
+            hash::sequential32u(hash, z);
+            return hash;
+        };
+        HashType invariant = invariants.back();
+        BitArray is_old(coloring.size());
+        BitArray is_new(coloring.size());
+        Vector<size_t> old_cells(coloring.size());
+        Vector<size_t> new_cells(coloring.size());
+        for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
+            size_t cell_end = coloring.m_cell_end[cell_idx];
+            if(coloring.m_cell_level[cell_idx] < stabilized.m_size)
+                is_old.set(cell_idx);
+            if(coloring.m_cell_level[cell_idx] == stabilized.m_size ||
+               (cell_end < coloring.size() && coloring.m_cell_level[cell_end] == stabilized.m_size))
+                is_new.set(cell_idx);
+            if(is_old[cell_idx] && !is_new[cell_idx])
+                old_cells.push(cell_idx);
+            if(is_new[cell_idx])
+                new_cells.push(cell_idx);
+            if(is_new[cell_idx] && !is_old[cell_idx])
+                hash::multiset32add(invariant, cell_idx);
+        }
+        /*std::cerr << "Depth: " << stabilized.m_size << std::endl;
+        std::cerr << "Old cells: ";
+        for(size_t idx = 0; idx < old_cells.m_size; idx++)
+            std::cerr << old_cells[idx] << ' ';
+        std::cerr << std::endl;
+        std::cerr << "New cells: ";
+        for(size_t idx = 0; idx < new_cells.m_size; idx++)
+            std::cerr << new_cells[idx] << ' ';
+        std::cerr << std::endl;*/
+        // Update Old <- New and New <- Old
+        for(size_t old_idx = 0; old_idx < old_cells.m_size; old_idx++) {
+            size_t old_cell = old_cells[old_idx];
+            size_t prev_cell_size = 0;
+            for(size_t new_idx = 0; new_idx < new_cells.m_size; new_idx++) {
+                size_t new_cell = new_cells[new_idx];
+                assert(new_cell != old_cell);
+                if(new_cell < old_cell) {
+                    size_t adj_count = quotient_graph.at(new_cell, old_cell);
+                    hash::multiset32sub(invariant, hashTriple(new_cell, old_cell, adj_count));
+                    if(is_old[new_cell]) {
+                        size_t new_cell_size = coloring.cellSize(new_cell);
+                        size_t new_cell_end = coloring.m_cell_end[new_cell];
+                        while(new_cell_end < coloring.size() && !is_old[new_cell_end])
+                            new_cell_end = coloring.m_cell_end[new_cell_end];
+                        prev_cell_size = new_cell_end - new_cell;
+                        assert(prev_cell_size > 0);
+                        adj_count = adj_count * prev_cell_size / new_cell_size;
+
+                        quotient_graph.set(new_cell, old_cell, adj_count);
+                        hash::multiset32add(invariant, hashTriple(new_cell, old_cell, adj_count));
+                    }
+                }
+                else {
+                    if(!is_old[new_cell]) {
+                        hash::multiset32sub(invariant, hashTriple(old_cell, new_cell, quotient_graph.at(old_cell, new_cell)));
+                    }
+                }
+            }
+        }
+        // Update New <- New
+        for(size_t idx = 0; idx < new_cells.m_size; idx++) {
+            size_t cell_idx = new_cells[idx];
+            for(size_t jdx = 0; jdx <= idx; jdx++) {
+                size_t cell_jdx = new_cells[jdx];
+                hash::multiset32sub(invariant, hashTriple(cell_jdx, cell_idx, quotient_graph.at(cell_jdx, cell_idx)));
+                if(is_old[cell_idx] && is_old[cell_jdx]) {
+                    size_t end_jdx = coloring.m_cell_end[cell_jdx];
+                    while(end_jdx < coloring.size() && !is_old[end_jdx])
+                        end_jdx = coloring.m_cell_end[end_jdx];
+                    T adj_count = 0;
+                    for(size_t kdx = cell_jdx; kdx < end_jdx; kdx++)
+                        adj_count += graph.adjacent(coloring[kdx], coloring[cell_idx]);
+                    hash::multiset32add(invariant, hashTriple(cell_jdx, cell_idx, adj_count));
+                    quotient_graph.set(cell_jdx, cell_idx, adj_count);
+                }
+            }
+        }
+        //return invariant;
+    }
+
     void unrefine() {
+        calculateQuotientInvariantDecrement();
+
         size_t cell_beg = 0, cell_end = coloring.m_cell_end[0];
         size_t level = stabilized.m_size;
         while(cell_end != coloring.size()) {
