@@ -7,7 +7,6 @@
 #include "array.h"
 #include "bitarray.h"
 #include "coloring.h"
-#include "graph.h"
 
 namespace morphi {
 

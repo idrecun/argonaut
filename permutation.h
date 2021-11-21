@@ -33,6 +33,13 @@ public:
         assert(m_inverse[m_forward[idx]] == idx);
     }
 
+    void rotate(T start, T new_start, T end) {
+        assert(start < end);
+        std::rotate(m_forward.m_data + start, m_forward.m_data + new_start, m_forward.m_data + end);
+        for(T idx = start; idx < end; idx++)
+            m_inverse[m_forward[idx]] = idx;
+    }
+
     const T& operator[](T idx) const {
         return m_forward[idx];
     }

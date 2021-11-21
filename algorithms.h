@@ -12,6 +12,7 @@
 #include "partition.h"
 #include "group.h"
 #include "assertions.h"
+#include "priority_queue.h"
 
 namespace morphi {
 
@@ -44,6 +45,54 @@ public:
           quotient_graph(vertices)
     {}
 
+    void prove() {
+        statistics.proof_size++;
+
+        T level = stabilized.m_size;
+        refine();
+
+        bool max_path = (max_node.invariants.m_size <= level ||
+                          invariants.back() >= max_node.invariants[level]);
+
+
+        if(!max_path) {
+            unrefine();
+            return;
+        }
+
+        size_t cell_idx;
+        Array<T> cell_content = targetCell(cell_idx);
+        Partition<T> orbit_partition(coloring.size());
+        size_t aut_counter = 0;
+        for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++) {
+            if(ptr > cell_content.m_data) {
+                if(level != fst_node.lca_level) {
+                    automorphisms.updatePartition(stabilized, orbit_partition, aut_counter);
+                    if(orbit_partition.mcr(*ptr) != *ptr) {
+                        continue;
+                    }
+                }
+                else if(automorphisms.m_orbit_partition.mcr(*ptr) != *ptr) {
+                    continue;
+                }
+            }
+
+            individualize(cell_idx, *ptr);
+            prove();
+            unindividualize(cell_idx);
+        }
+
+        if(cell_content.m_size == 0) {
+            if(max_path && (!max_node.is_leaf || (max_node.invariants.m_size == (size_t) level + 1 && graph.less(max_node.permutation.m_inverse, coloring.m_permutation.m_forward)))) {
+                max_node.is_leaf = true;
+                max_node.lca_level = level;
+                max_node.permutation.copyInv(coloring.m_permutation);
+            }
+        }
+
+        unrefine();
+    }
+
     const Permutation<T>& solve() {
         solve(PathType::MaxPath | PathType::AutPath);
         std::cerr << "Tree size: " << statistics.tree_size << std::endl;
@@ -54,6 +103,8 @@ public:
         std::cerr << "Aut path nodes: " << statistics.aut_nodes << std::endl;
         std::cerr << "Max path length: " << max_node.invariants.m_size << std::endl;
         std::cerr << "Fst path length: " << fst_node.invariants.m_size << std::endl;
+        prove();
+        std::cerr << "Proof size: " << statistics.proof_size << std::endl;
         return max_node.permutation;
     }
 
@@ -232,8 +283,8 @@ public:
         coloring.m_cell_end[cell_idx] = coloring.m_cell_end[cell_idx + 1];
     }
 
-    template<bool RootLevel>
-    void refine1(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
+    template<typename ActiveSet, bool RootLevel, bool RotateCells>
+    void refine1(size_t work_cell, ActiveSet& active_cells, HashType& invariant) {
 #ifdef DEBUG_OUT
         std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine1" << std::endl;
 #endif
@@ -252,20 +303,29 @@ public:
                     coloring.m_cell_end[split] = cell_end;
                     coloring.m_cell_level[split] = stabilized.m_size;
 
-                    if(is_active[cell_beg] || split - cell_beg >= cell_end - split) {
-                        active_cells.push(split);
-                        is_active.set(split);
+                    if constexpr (RotateCells) {
+                        if(split - cell_beg >= cell_end - split) {
+                            coloring.rotate(cell_beg, cell_end, stabilized.m_size);
+                            split = coloring.m_cell_end[cell_beg];
+                        }
+
+                        if(active_cells.contains(cell_beg))
+                            active_cells.push(split);
+                        else
+                            active_cells.push(cell_beg);
                     }
                     else {
-                        active_cells.push(cell_beg);
-                        is_active.set(cell_beg);
-                    }
+                        if(active_cells.contains(cell_beg) || split - cell_beg >= cell_end - split)
+                            active_cells.push(split);
+                        else
+                            active_cells.push(cell_beg);
 
-                    if constexpr (!RootLevel) {
-                        hash::sequential32u(invariant, cell_beg);
-                        hash::sequential32u(invariant, 0);
-                        hash::sequential32u(invariant, split);
-                        hash::sequential32u(invariant, 1);
+                        if constexpr (!RootLevel) {
+                            hash::sequential32u(invariant, cell_beg);
+                            hash::sequential32u(invariant, 0);
+                            hash::sequential32u(invariant, split);
+                            hash::sequential32u(invariant, 1);
+                        }
                     }
                 }
                 else if constexpr (!RootLevel) {
@@ -287,8 +347,8 @@ public:
 #endif
     }
 
-    template<bool RootLevel>
-    void refine2(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
+    template<typename ActiveSet, bool RootLevel, bool RotateCells>
+    void refine2(size_t work_cell, ActiveSet& active_cells, HashType& invariant) {
 #ifdef DEBUG_OUT
         std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine2" << std::endl;
 #endif
@@ -320,35 +380,48 @@ public:
                     coloring.m_cell_end[split2] = cell_end;
                     coloring.m_cell_level[split2] = stabilized.m_size;
 
-                    if(is_active[cell_beg] || (split1 - cell_beg >= split2 - split1 && split1 - cell_beg >= cell_end - split2)) {
-                        active_cells.push(split1);
-                        is_active.set(split1);
+                    if constexpr (RotateCells) {
+                        if(split1 - cell_beg >= split2 - split1 && split1 - cell_beg >= cell_end - split2) {
+                            coloring.rotate(cell_beg, cell_end, stabilized.m_size);
+                            split1 = coloring.m_cell_end[cell_beg];
+                            split2 = coloring.m_cell_end[split1];
+                        }
+                        else if(split2 - split1 >= cell_end - split2) {
+                            coloring.rotate(split1, cell_end, stabilized.m_size);
+                            split2 = coloring.m_cell_end[split1];
+                        }
 
-                        active_cells.push(split2);
-                        is_active.set(split2);
-                    }
-                    else if(split2 - split1 >= cell_end - split2) {
-                        active_cells.push(cell_beg);
-                        is_active.set(cell_beg);
-
-                        active_cells.push(split2);
-                        is_active.set(split2);
+                        if(active_cells.contains(cell_beg)) {
+                            active_cells.push(split1);
+                            active_cells.push(split2);
+                        }
+                        else {
+                            active_cells.push(cell_beg);
+                            active_cells.push(split1);
+                        }
                     }
                     else {
-                        active_cells.push(cell_beg);
-                        is_active.set(cell_beg);
+                        if(active_cells.contains(cell_beg) || (split1 - cell_beg >= split2 - split1 && split1 - cell_beg >= cell_end - split2)) {
+                            active_cells.push(split1);
+                            active_cells.push(split2);
+                        }
+                        else if(split2 - split1 >= cell_end - split2) {
+                            active_cells.push(cell_beg);
+                            active_cells.push(split2);
+                        }
+                        else {
+                            active_cells.push(cell_beg);
+                            active_cells.push(split1);
+                        }
 
-                        active_cells.push(split1);
-                        is_active.set(split1);
-                    }
-
-                    if constexpr (!RootLevel) {
-                        hash::sequential32u(invariant, cell_beg);
-                        hash::sequential32u(invariant, 0);
-                        hash::sequential32u(invariant, split1);
-                        hash::sequential32u(invariant, 1);
-                        hash::sequential32u(invariant, split2);
-                        hash::sequential32u(invariant, 2);
+                        if constexpr (!RootLevel) {
+                            hash::sequential32u(invariant, cell_beg);
+                            hash::sequential32u(invariant, 0);
+                            hash::sequential32u(invariant, split1);
+                            hash::sequential32u(invariant, 1);
+                            hash::sequential32u(invariant, split2);
+                            hash::sequential32u(invariant, 2);
+                        }
                     }
                 }
                 else if((cell_beg != split1 && split1 != split2) ||
@@ -360,27 +433,36 @@ public:
                     coloring.m_cell_end[split] = cell_end;
                     coloring.m_cell_level[split] = stabilized.m_size;
 
-                    if(is_active[cell_beg] || split - cell_beg >= cell_end - split) {
-                        active_cells.push(split);
-                        is_active.set(split);
+                    if constexpr(RotateCells) {
+                        if(split - cell_beg >= cell_end - split) {
+                            coloring.rotate(cell_beg, cell_end, stabilized.m_size);
+                            split = coloring.m_cell_end[cell_beg];
+                        }
+
+                        if(active_cells.contains(cell_beg))
+                            active_cells.push(split);
+                        else
+                            active_cells.push(cell_beg);
                     }
                     else {
-                        active_cells.push(cell_beg);
-                        is_active.set(cell_beg);
-                    }
+                        if(active_cells.contains(cell_beg) || split - cell_beg >= cell_end - split)
+                            active_cells.push(split);
+                        else
+                            active_cells.push(cell_beg);
 
-                    if constexpr (!RootLevel) {
-                        if(cell_beg != split1) {
-                            hash::sequential32u(invariant, cell_beg);
-                            hash::sequential32u(invariant, 0);
-                        }
-                        if(split1 != split2) {
-                            hash::sequential32u(invariant, split1);
-                            hash::sequential32u(invariant, 1);
-                        }
-                        if(split2 != cell_end) {
-                            hash::sequential32u(invariant, split2);
-                            hash::sequential32u(invariant, 2);
+                        if constexpr (!RootLevel) {
+                            if(cell_beg != split1) {
+                                hash::sequential32u(invariant, cell_beg);
+                                hash::sequential32u(invariant, 0);
+                            }
+                            if(split1 != split2) {
+                                hash::sequential32u(invariant, split1);
+                                hash::sequential32u(invariant, 1);
+                            }
+                            if(split2 != cell_end) {
+                                hash::sequential32u(invariant, split2);
+                                hash::sequential32u(invariant, 2);
+                            }
                         }
                     }
                 }
@@ -406,8 +488,8 @@ public:
 #endif
     }
 
-    template<bool RootLevel>
-    void refineN(size_t work_cell, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
+    template<typename ActiveSet, bool RootLevel, bool RotateCells>
+    void refineN(size_t work_cell, ActiveSet& active_cells, HashType& invariant) {
 #ifdef DEBUG_OUT
         std::cerr << std::string(2 * stabilized.m_size, ' ') << "refineN" << std::endl;
 #endif
@@ -435,11 +517,8 @@ public:
         for(auto ptr = buckets.m_data + 1; ptr != buckets.m_end; ptr++)
             *ptr += *(ptr - 1);
 
-        struct vcPair {
-            T vertex;
-            T cell;
-        };
-        Array<vcPair> sorted(coloring.size());
+        struct VertexCell { T vertex; T cell; };
+        Array<VertexCell> sorted(coloring.size());
         Array<T> cell_buckets(coloring.size());
         size_t cell_beg = 0, cell_end = coloring.m_cell_end[0];
         for(size_t idx = 0; idx < coloring.size(); idx++) {
@@ -453,7 +532,7 @@ public:
         }
 
         for(size_t idx = coloring.size(); idx != 0; idx--) {
-            vcPair& vertex = sorted[idx - 1];
+            VertexCell& vertex = sorted[idx - 1];
             coloring.m_permutation.set(--cell_buckets[vertex.cell], vertex.vertex);
         }
 
@@ -483,39 +562,13 @@ public:
             assert(cell_end > cell_beg);
             cell_prev = cell_beg;
 
-            if constexpr(!RootLevel) {
-                hash::sequential32u(invariant, cell_beg);
-                hash::sequential32u(invariant, adj_count[coloring[cell_beg]]);
-            }
-
-            if(is_active[cell_beg]) {
-                for(size_t idx = cell_beg + 1; idx != cell_end; idx++)
-                    if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
-                        coloring.m_cell_end[cell_prev] = idx;
-                        coloring.m_cell_end[idx] = cell_end;
-                        coloring.m_cell_level[idx] = stabilized.m_size;
-                        if constexpr(!RootLevel) {
-                            hash::sequential32u(invariant, idx);
-                            hash::sequential32u(invariant, adj_count[coloring[idx]]);
-                        }
-                        cell_prev = idx;
-                        assert(cell_prev < coloring.size());
-
-                        active_cells.push(idx);
-                        is_active.set(idx);
-                    }
-            }
-            else {
+            if constexpr (RotateCells) {
                 max_cell = cell_beg;
                 for(size_t idx = cell_beg + 1; idx != cell_end; idx++) {
                     if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
                         coloring.m_cell_end[cell_prev] = idx;
                         coloring.m_cell_end[idx] = cell_end;
                         coloring.m_cell_level[idx] = stabilized.m_size;
-                        if constexpr(!RootLevel) {
-                            hash::sequential32u(invariant, idx);
-                            hash::sequential32u(invariant, adj_count[coloring[idx]]);
-                        }
 
                         if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
                             max_cell = cell_prev;
@@ -526,11 +579,62 @@ public:
                 if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
                     max_cell = cell_prev;
 
-                for(size_t cell_idx = cell_beg; cell_idx != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
-                    if(cell_idx != max_cell) {
+                coloring.rotate(max_cell, cell_end, stabilized.m_size);
+
+                if(active_cells.contains(cell_beg))
+                    for(size_t cell_idx = coloring.m_cell_end[cell_beg]; cell_idx != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
                         active_cells.push(cell_idx);
-                        is_active.set(cell_idx);
+                else
+                    for(size_t cell_idx = cell_beg; coloring.m_cell_end[cell_idx] != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
+                        active_cells.push(cell_idx);
+            }
+            else {
+                if constexpr(!RootLevel) {
+                    hash::sequential32u(invariant, cell_beg);
+                    hash::sequential32u(invariant, adj_count[coloring[cell_beg]]);
+                }
+
+                if(active_cells.contains(cell_beg)) {
+                    for(size_t idx = cell_beg + 1; idx != cell_end; idx++)
+                        if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
+                            coloring.m_cell_end[cell_prev] = idx;
+                            coloring.m_cell_end[idx] = cell_end;
+                            coloring.m_cell_level[idx] = stabilized.m_size;
+                            if constexpr(!RootLevel) {
+                                hash::sequential32u(invariant, idx);
+                                hash::sequential32u(invariant, adj_count[coloring[idx]]);
+                            }
+                            cell_prev = idx;
+                            assert(cell_prev < coloring.size());
+
+                            active_cells.push(idx);
+                        }
+                }
+                else {
+                    max_cell = cell_beg;
+                    for(size_t idx = cell_beg + 1; idx != cell_end; idx++) {
+                        if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
+                            coloring.m_cell_end[cell_prev] = idx;
+                            coloring.m_cell_end[idx] = cell_end;
+                            coloring.m_cell_level[idx] = stabilized.m_size;
+                            if constexpr(!RootLevel) {
+                                hash::sequential32u(invariant, idx);
+                                hash::sequential32u(invariant, adj_count[coloring[idx]]);
+                            }
+
+                            if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
+                                max_cell = cell_prev;
+                            cell_prev = idx;
+                            assert(cell_prev < coloring.size());
+                        }
                     }
+                    if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
+                        max_cell = cell_prev;
+
+                    for(size_t cell_idx = cell_beg; cell_idx != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
+                        if(cell_idx != max_cell)
+                            active_cells.push(cell_idx);
+                }
             }
 #ifdef DEBUG_SLOW_ASSERTS
             assertCellSplittingValid(coloring, cell_beg, cell_end, adj_count, stabilized.m_size);
@@ -542,53 +646,56 @@ public:
 #endif
     }
 
-    void refineCells(size_t work_cell, size_t work_size, Vector<T>& active_cells, BitArray& is_active, HashType& invariant) {
-        if(stabilized.m_size == 0) {
+    template<typename ActiveSet>
+    void refineCells(size_t work_cell, size_t work_size, ActiveSet& active_cells, HashType& invariant) {
+        //if(stabilized.m_size == 0) {
             if(work_size == 1)
-                refine1<true>(work_cell, active_cells, is_active, invariant);
+                refine1<ActiveSet, true, true>(work_cell, active_cells, invariant);
             else if(work_size == 2)
-                refine2<true>(work_cell, active_cells, is_active, invariant);
+                refine2<ActiveSet, true, true>(work_cell, active_cells, invariant);
             else
-                refineN<true>(work_cell, active_cells, is_active, invariant);
-        }
+                refineN<ActiveSet, true, true>(work_cell, active_cells, invariant);
+        /*}
         else {
             if(work_size == 1)
-                refine1<false>(work_cell, active_cells, is_active, invariant);
+                refine1<false>(work_cell, active_cells, invariant);
             else if(work_size == 2)
-                refine2<false>(work_cell, active_cells, is_active, invariant);
+                refine2<false>(work_cell, active_cells, invariant);
             else
-                refineN<false>(work_cell, active_cells, is_active, invariant);
-        }
+                refineN<false>(work_cell, active_cells, invariant);
+        }*/
     }
 
     void refine() {
-        Vector<T> active_cells(coloring.size());
-        BitArray is_active(coloring.size());
+        PriorityQueue<T> active_cells(coloring.size());
+        //Vector<T> active_cells(coloring.size());
+        //BitArray is_active(coloring.size());
 
         if(stabilized.m_size > 0) {
             T cell_idx = coloring.m_permutation.m_inverse[stabilized.back()];
             active_cells.push(cell_idx);
-            is_active.set(cell_idx);
+            //is_active.set(cell_idx);
             assert(coloring.m_cell_end[cell_idx] != 0);
         }
         else {
             for(size_t cell_idx = 0; cell_idx != coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
                 active_cells.push(cell_idx);
-                is_active.set(cell_idx);
+                //is_active.set(cell_idx);
                 assert(coloring.m_cell_end[cell_idx] != 0);
             }
         }
 
         HashType invariant = 0;
         while(active_cells.m_size > 0) {
-            size_t work_cell = active_cells.back();
+            /*size_t work_cell = active_cells.back();
             active_cells.pop();
-            is_active.clear(work_cell);
+            is_active.clear(work_cell);*/
+            size_t work_cell = active_cells.pop();
 
             assert(coloring.m_cell_end[work_cell] != 0);
 
             size_t work_size = coloring.m_cell_end[work_cell] - work_cell;
-            refineCells(work_cell, work_size, active_cells, is_active, invariant);
+            refineCells(work_cell, work_size, active_cells, invariant);
 
 #ifdef DEBUG_SLOW_ASSERTS
             assertColoringSplittingValid(coloring, graph, work_cell, work_size);
@@ -944,6 +1051,7 @@ public:
         size_t orbit_prunes = 0;
         size_t max_nodes = 0;
         size_t aut_nodes = 0;
+        size_t proof_size = 0;
     } statistics;
 };
 

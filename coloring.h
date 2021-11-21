@@ -3,6 +3,7 @@
 
 #include "permutation.h"
 #include "hash.h"
+#include "vector.h"
 
 namespace morphi {
 
@@ -40,6 +41,22 @@ public:
 
     size_t cellSize(size_t cell_idx) const {
         return m_cell_end[cell_idx] - cell_idx;
+    }
+
+    void rotate(size_t cell_beg, size_t cell_end, size_t level) {
+        // proveriti
+        if(m_cell_end[cell_beg] == cell_end)
+            return;
+        m_permutation.rotate(cell_beg, m_cell_end[cell_beg], cell_end);
+        Vector<size_t> cell_sizes(cell_end - cell_beg);
+        for(size_t cell = m_cell_end[cell_beg]; cell != cell_end; cell = m_cell_end[cell])
+            cell_sizes.push(cellSize(cell));
+        for(size_t idx = 0; idx < cell_sizes.m_size; idx++) {
+            m_cell_end[cell_beg] = cell_beg + cell_sizes[idx];
+            cell_beg = m_cell_end[cell_beg];
+            m_cell_level[cell_beg] = level;
+        }
+        m_cell_end[cell_beg] = cell_end;
     }
 
     Permutation<T> m_permutation;

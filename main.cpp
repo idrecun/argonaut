@@ -204,6 +204,41 @@ void test_group() {
     std::cout << std::endl;
 }
 
+void test_permutation_rotate() {
+    size_t n = 10;
+    morphi::Permutation<uint32_t> p(n);
+    std::iota(p.m_forward.m_data, p.m_forward.m_end, 0);
+    std::iota(p.m_inverse.m_data, p.m_inverse.m_end, 0);
+
+    for(size_t idx = 0; idx < n; idx++)
+        std::cout << p[idx] << ' ';
+    std::cout << std::endl;
+
+    p.rotate(0, 2, n);
+    for(size_t idx = 0; idx < n; idx++)
+        std::cout << p[idx] << ":" << p.m_inverse[p[idx]] << ' ';
+    std::cout << std::endl;
+}
+
+void test_coloring_rotate() {
+    uint32_t colors[] = {0, 2, 1, 2, 2, 1, 3, 3, 4, 1, 5, 3, 6, 3};
+    morphi::Coloring<uint32_t> c(7, colors);
+    std::cout << c << std::endl;
+    for(size_t cell = 0; cell != 7; cell = c.m_cell_end[cell])
+        std::cout << c.m_cell_level[cell] << ' ';
+    std::cout << std::endl;
+    c.rotate(2, 7, 1000);
+    std::cout << c << std::endl;
+    for(size_t cell = 0; cell != 7; cell = c.m_cell_end[cell])
+        std::cout << c.m_cell_level[cell] << ' ';
+    std::cout << std::endl;
+    c.rotate(0, 7, 2000);
+    std::cout << c << std::endl;
+    for(size_t cell = 0; cell != 7; cell = c.m_cell_end[cell])
+        std::cout << c.m_cell_level[cell] << ' ';
+    std::cout << std::endl;
+}
+
 void test_graph_single(std::string filename, unsigned num_passes) {
     std::ifstream input;
     input.open(filename);
@@ -347,6 +382,8 @@ int main()
     // test_partition();
     // test_group();
     // test_multiset_hash();
+    // test_permutation_rotate();
+    // test_coloring_rotate();
 
     return 0;
 }

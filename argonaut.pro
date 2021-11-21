@@ -26,4 +26,5 @@ HEADERS += \
     memory.h \
     partition.h \
     permutation.h \
+    priority_queue.h \
     vector.h

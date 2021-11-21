@@ -18,7 +18,6 @@ public:
         return m_data[r * m_cols + c] = val;
     }
 
-
     Array<T> m_data;
     size_t m_rows = 0;
     size_t m_cols = 0;
