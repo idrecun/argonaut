@@ -26,6 +26,12 @@ public:
         m_size = size;
     }
 
+    void copy(const Vector<T>& oth) {
+        assert(oth.m_array.m_size == m_array.m_size);
+        m_size = oth.m_size;
+        std::copy(oth.m_array.m_data, oth.m_array.m_data + oth.m_size, m_array.m_data);
+    }
+
     const T& back() const {
         assert(m_size > 0);
         return m_array[m_size - 1];

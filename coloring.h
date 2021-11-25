@@ -27,12 +27,20 @@ public:
         }
     }
 
+    Coloring(size_t size) : m_permutation(size), m_cell_end(size), m_cell_level(size) {}
+
     size_t size() const {
         return m_permutation.size();
     }
 
     const T& operator[](size_t idx) const {
         return m_permutation[idx];
+    }
+
+    void copy(const Coloring<T>& oth) {
+        m_permutation.copyFwd(oth.m_permutation);
+        std::copy(oth.m_cell_end.m_data, oth.m_cell_end.m_end, m_cell_end.m_data);
+        std::copy(oth.m_cell_level.m_data, oth.m_cell_level.m_end, m_cell_level.m_data);
     }
 
     T indexOf(T vertex) const {

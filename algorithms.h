@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <numeric>
 #include "vector.h"
 #include "matrix.h"
 #include "bitarray.h"
@@ -13,6 +14,7 @@
 #include "group.h"
 #include "assertions.h"
 #include "priority_queue.h"
+#include "proof.h"
 
 namespace morphi {
 
@@ -26,16 +28,19 @@ public:
     };
 
     struct NodePath {
-        NodePath(size_t size) : permutation(size), invariants(size) {}
+        NodePath(size_t size) : permutation(size), coloring(size), invariants(size), stabilized(size) {}
 
         bool is_leaf = false;
         T lca_level = 0;
         Permutation<T> permutation;
+        Coloring<T> coloring;
         Vector<HashType> invariants;
+        Vector<T> stabilized;
     };
 
     AlgorithmDFS(size_t vertices, size_t edges, Array<uint32_t>& edge_list, Array<uint32_t>& colors)
         : graph(vertices, edges, edge_list.m_data),
+          input_coloring(vertices),
           coloring(vertices, colors.m_data),
           invariants(vertices + 1),
           stabilized(vertices),
@@ -43,54 +48,177 @@ public:
           fst_node(vertices),
           automorphisms(vertices, 500),
           quotient_graph(vertices)
-    {}
+    {
+        input_coloring.copy(coloring);
+    }
 
-    void prove() {
+    void generateProof() {
+        // mora da se resetuje bojenje!!!
+        coloring.copy(input_coloring);
+        proof.coloringAxiom();
+        Vector<T> target_cells(2 * max_node.stabilized.m_size * coloring.size());
+        prove(true, target_cells);
+        proof.pathAxiom();
+        size_t target_idx = 0;
+        for(size_t idx = 0; idx < max_node.stabilized.m_size; idx++) {
+            Vector<T> cell_content(coloring.size());
+            while(target_cells[target_idx] != coloring.size())
+                cell_content.push(target_cells[target_idx++]);
+            target_idx++;
+            proof.extendPath(idx, max_node.stabilized, cell_content, max_node.stabilized[idx]);
+        }
+        proof.canonicalLeaf(max_node.stabilized, max_node.permutation.m_forward);
+    }
+
+    // returns whether the whole subtree has been pruned
+    bool prove(bool canon_path, Vector<T>& target_cells) {
         statistics.proof_size++;
 
         T level = stabilized.m_size;
-        refine();
+        refine(true);
 
-        bool max_path = (max_node.invariants.m_size <= level ||
-                          invariants.back() >= max_node.invariants[level]);
+        proof.invariantAxiom(stabilized);
 
+        if(invariants.back() > max_node.invariants[level]) {
+            std::cerr << "Problem" << std::endl;
+            for(size_t idx = 0; idx < stabilized.m_size; idx++)
+                std::cerr << (size_t)stabilized[idx] << " (" << (size_t)invariants[idx + 1] << ") ";
+            std::cerr << std::endl;
+            for(size_t idx = 0; idx < max_node.stabilized.m_size; idx++)
+                std::cerr << (size_t)max_node.stabilized[idx] << " (" << (size_t)max_node.invariants[idx + 1] << ") ";
+            std::cerr << std::endl;
+        }
 
-        if(!max_path) {
+        if(invariants.back() != max_node.invariants[level]) {
+            proof.pruneInvariant(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
             unrefine();
-            return;
+            return true;
+        }
+
+
+        if(stabilized.m_size > 0) {
+            canon_path = canon_path && stabilized.back() == max_node.stabilized[level - 1];
+            proof.invariantsEqual(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
         }
 
         size_t cell_idx;
         Array<T> cell_content = targetCell(cell_idx);
+
+        if(canon_path && cell_content.m_size > 0) {
+            for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++)
+                target_cells.push(*ptr);
+            target_cells.push(coloring.size());
+        }
+
+        if(cell_content.m_size > 0)
+            proof.targetCell(stabilized, coloring);
+
         Partition<T> orbit_partition(coloring.size());
         size_t aut_counter = 0;
-        for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++) {
-            if(ptr > cell_content.m_data) {
-                if(level != fst_node.lca_level) {
-                    automorphisms.updatePartition(stabilized, orbit_partition, aut_counter);
-                    if(orbit_partition.mcr(*ptr) != *ptr) {
-                        continue;
-                    }
-                }
-                else if(automorphisms.m_orbit_partition.mcr(*ptr) != *ptr) {
-                    continue;
-                }
-            }
 
-            individualize(cell_idx, *ptr);
-            prove();
+        BitArray axiom_written(coloring.size());
+
+        size_t pruned_count = 0;
+
+        if(canon_path && cell_content.m_size > 0) {
+            individualize(cell_idx, max_node.stabilized[level], true);
+            //std::cerr << "ENTERING " << (size_t)max_node.stabilized[level] << std::endl;
+            //all_pruned = all_pruned && prove(canon_path, target_cells);
+            pruned_count += prove(canon_path, target_cells);
             unindividualize(cell_idx);
         }
 
-        if(cell_content.m_size == 0) {
-            if(max_path && (!max_node.is_leaf || (max_node.invariants.m_size == (size_t) level + 1 && graph.less(max_node.permutation.m_inverse, coloring.m_permutation.m_forward)))) {
-                max_node.is_leaf = true;
-                max_node.lca_level = level;
-                max_node.permutation.copyInv(coloring.m_permutation);
+        for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++) {
+            if(canon_path && *ptr == max_node.stabilized[level])
+                continue;
+
+            auto onMerge = [&](size_t aut_idx, T vertex1, T vertex2) {
+                if(!axiom_written[vertex1]) {
+                    proof.orbitsAxiom(vertex1, stabilized);
+                    axiom_written.set(vertex1);
+                }
+                if(!axiom_written[vertex2]) {
+                    proof.orbitsAxiom(vertex2, stabilized);
+                    axiom_written.set(vertex2);
+                }
+                T p1 = orbit_partition.mcr(vertex1);
+                T p2 = orbit_partition.mcr(vertex2);
+                if(p1 != p2) {
+                    Vector<T> orbit1(coloring.size());
+                    Vector<T> orbit2(coloring.size());
+                    for(size_t idx = 0; idx < coloring.size(); idx++) {
+                        T p = orbit_partition.mcr(idx);
+                        if(p == p1)
+                            orbit1.push(idx);
+                        else if(p == p2)
+                            orbit2.push(idx);
+                    }
+                    Array<T> automorphism(coloring.size());
+                    std::iota(automorphism.m_data, automorphism.m_end, 0);
+                    // formiraj automorfizam na osnovu aut_idx
+                    auto ptr = automorphisms.elemCyclesBegin(aut_idx);
+                    auto end = automorphisms.elemCyclesEnd(aut_idx);
+                    T cycle_rep = automorphisms.m_points;
+                    while(ptr != end) {
+                        if(cycle_rep == automorphisms.m_points)
+                            cycle_rep = *ptr;
+                        else if(*ptr == automorphisms.m_points) {
+                            automorphism[*(ptr - 1)] = cycle_rep;
+                            cycle_rep = *ptr;
+                        }
+                        else
+                            automorphism[*(ptr - 1)] = *ptr;
+                        ptr++;
+                    }
+                    proof.mergeOrbits(orbit1, orbit2, stabilized, automorphism, vertex1, vertex2);
+                }
+            };
+            automorphisms.updatePartitionCaller(stabilized, orbit_partition, aut_counter, onMerge);
+            T p = orbit_partition.mcr(*ptr);
+            if(p != *ptr) {
+                Vector<T> orbit(cell_content.m_size);
+                for(size_t idx = 0; idx < coloring.size(); idx++)
+                    if(orbit_partition.mcr(idx) == p)
+                        orbit.push(idx);
+                proof.pruneOrbits(orbit, stabilized, p, *ptr);
+                pruned_count++;
+                continue;
             }
+
+            individualize(cell_idx, *ptr, true);
+            //std::cerr << "ENTERING " << (size_t)*ptr << std::endl;
+            //all_pruned = all_pruned && prove(canon_path, target_cells);
+            pruned_count += prove(canon_path, target_cells);
+            unindividualize(cell_idx);
+        }
+
+        if(cell_content.m_size > 0) {
+            if(canon_path)
+                assert(pruned_count == cell_content.m_size - 1);
+            else
+                assert(pruned_count == cell_content.m_size);
+        }
+
+        //if(cell_content.m_size == 0)
+            //std::cerr << "LEAF" << std::endl;
+
+        /*if(!all_pruned && !canon_path)
+            std::cerr << "PROBLEM" << std::endl;*/
+
+        if(cell_content.m_size > 0 && pruned_count == cell_content.m_size) {
+            proof.pruneParent(stabilized, cell_content);
+            unrefine();
+            return true;
+        }
+
+        if(cell_content.m_size == 0 && !canon_path/*graph.less(coloring.m_permutation.m_forward, max_node.permutation.m_inverse)*/) {
+            proof.pruneLeaf(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
+            unrefine();
+            return true;
         }
 
         unrefine();
+        return false;
     }
 
     const Permutation<T>& solve() {
@@ -103,7 +231,7 @@ public:
         std::cerr << "Aut path nodes: " << statistics.aut_nodes << std::endl;
         std::cerr << "Max path length: " << max_node.invariants.m_size << std::endl;
         std::cerr << "Fst path length: " << fst_node.invariants.m_size << std::endl;
-        prove();
+        generateProof();
         std::cerr << "Proof size: " << statistics.proof_size << std::endl;
         return max_node.permutation;
     }
@@ -219,6 +347,9 @@ public:
                 max_node.is_leaf = true;
                 max_node.lca_level = level;
                 max_node.permutation.copyInv(coloring.m_permutation);
+
+                max_node.stabilized.copy(stabilized);
+                max_node.coloring.copy(coloring);
             }
 
             if(!fst_node.is_leaf) {
@@ -263,8 +394,10 @@ public:
         return level;
     }
 
-    void individualize(size_t cell_idx, T vertex) {
+    void individualize(size_t cell_idx, T vertex, bool proving = false) {
         assert(coloring.m_cell_end[cell_idx] - cell_idx > 1);
+        if(proving)
+            proof.individualize(stabilized, vertex, coloring);
 
         stabilized.push(vertex);
 
@@ -666,7 +799,7 @@ public:
         }*/
     }
 
-    void refine() {
+    void refine(bool proving = false) {
         PriorityQueue<T> active_cells(coloring.size());
         //Vector<T> active_cells(coloring.size());
         //BitArray is_active(coloring.size());
@@ -694,8 +827,26 @@ public:
 
             assert(coloring.m_cell_end[work_cell] != 0);
 
+            // For proof only
+            size_t cells = 0;
+            Coloring<T> prev_coloring(coloring.size());
+            prev_coloring.copy(coloring);
+            if(proving) {
+                for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx])
+                    cells++;
+            }
+
             size_t work_size = coloring.m_cell_end[work_cell] - work_cell;
             refineCells(work_cell, work_size, active_cells, invariant);
+
+            // For proof only
+            if(proving) {
+                size_t cells_after = 0;
+                for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx])
+                    cells_after++;
+                if(cells_after != cells)
+                    proof.splitColoring(stabilized, prev_coloring);
+            }
 
 #ifdef DEBUG_SLOW_ASSERTS
             assertColoringSplittingValid(coloring, graph, work_cell, work_size);
@@ -711,6 +862,8 @@ public:
             std::cerr << std::string(2 * stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
 #endif
         }
+        if(proving)
+            proof.equitable(stabilized, coloring);
 
 #ifdef DEBUG_SLOW_ASSERTS
         assertEquitableColoring(coloring, graph);
@@ -1032,6 +1185,7 @@ public:
 
     // Algorithm input
     Graph<T> graph;
+    Coloring<T> input_coloring;
     Coloring<T> coloring;
 
     // Algorithm state
@@ -1043,6 +1197,9 @@ public:
 
     Group<T> automorphisms;
     SymmetricMatrix<T> quotient_graph;
+
+    // Proof
+    Proof<T> proof;
 
     // Statistics
     struct Statistics {

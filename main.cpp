@@ -268,10 +268,11 @@ void test_graph_single(std::string filename, unsigned num_passes) {
 
 void test_graphs() {
     std::string test_files[] = {
-        "/home/idrecun/repos/argonaut/graphs/milan.bliss",
-        "/home/idrecun/repos/argonaut/graphs/regular.bliss",
-        "/home/idrecun/repos/argonaut/graphs/k33.bliss",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-2",
+        //"/home/idrecun/repos/argonaut/graphs/milan.bliss",
+        //"/home/idrecun/repos/argonaut/graphs/regular.bliss",
+        //"/home/idrecun/repos/argonaut/graphs/square.bliss",
+        //"/home/idrecun/repos/argonaut/graphs/k33.bliss",
+        /*"/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-2",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-3",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-4",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-5",
@@ -334,9 +335,9 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-10",
         "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-20",
         "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-30",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-40",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-40",*/
         "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-50",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/ag/ag2-8",
+        /*"/home/idrecun/repos/morphi/tests/undirected_dim/ag/ag2-8",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-20",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-40",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-60",
@@ -350,13 +351,13 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-37",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-43",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-49",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-55",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-55",*/
         /*"/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-61",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-67",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-73",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-79",*/
     };
-    unsigned num_passes = 3;
+    unsigned num_passes = 1;
     for(auto test_file : test_files) {
         test_graph_single(test_file, num_passes);
 

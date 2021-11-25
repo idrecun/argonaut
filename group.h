@@ -52,7 +52,7 @@ public:
             assert(m_elem_cycles_ptr[idx] <= m_elem_cycles_ptr[idx + 1]);
     }
 
-    void updatePartition(const Vector<T>& stabilized, Partition<T>& partition, size_t& elem_idx) {
+    void updatePartitionCaller(const Vector<T>& stabilized, Partition<T>& partition, size_t& elem_idx, std::function<void(size_t, T, T)> onMerge) {
         for(; elem_idx < m_elements; elem_idx++) {
             bool stabilizes = true;
             for(size_t idx = 0; idx < stabilized.m_size; idx++)
@@ -70,12 +70,18 @@ public:
                         cycle_rep = *ptr;
                     else if(*ptr == m_points)
                         cycle_rep = m_points;
-                    else
-                        partition.merge(cycle_rep, *ptr);
+                    else {
+                        onMerge(elem_idx, *(ptr - 1), *ptr);
+                        partition.merge(*(ptr - 1), *ptr);
+                    }
                     ptr++;
                 }
             }
         }
+    }
+
+    void updatePartition(const Vector<T>& stabilized, Partition<T>& partition, size_t& elem_idx) {
+        updatePartitionCaller(stabilized, partition, elem_idx, [](size_t, T, T) {});
     }
 
     size_t fixedPointIndex(size_t element, size_t point) {
