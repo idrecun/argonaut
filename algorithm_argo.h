@@ -1,5 +1,5 @@
-#ifndef ALGORITHMS_H
-#define ALGORITHMS_H
+#ifndef ALGORITHM_ARGO_H
+#define ALGORITHM_ARGO_H
 
 #include <cstdint>
 #include <limits>
@@ -15,11 +15,12 @@
 #include "assertions.h"
 #include "priority_queue.h"
 #include "proof.h"
+#include "utility.h"
 
 namespace morphi {
 
 template<typename T, typename HashType>
-class AlgorithmDFS {
+class AlgorithmArgonaut {
 public:
 
     enum PathType {
@@ -38,7 +39,15 @@ public:
         Vector<T> stabilized;
     };
 
-    AlgorithmDFS(size_t vertices, size_t edges, Array<uint32_t>& edge_list, Array<uint32_t>& colors)
+    void setLeaf(NodePath& node) {
+        node.is_leaf = true;
+        node.lca_level = stabilized.m_size;
+        node.permutation.copyInv(coloring.m_permutation);
+        node.stabilized.copy(stabilized);
+        node.coloring.copy(coloring);
+    }
+
+    AlgorithmArgonaut(size_t vertices, size_t edges, Array<uint32_t>& edge_list, Array<uint32_t>& colors, size_t aut_limit, ProofType proof_type, std::string proof_file)
         : graph(vertices, edges, edge_list.m_data),
           input_coloring(vertices),
           coloring(vertices, colors.m_data),
@@ -46,32 +55,30 @@ public:
           stabilized(vertices),
           max_node(vertices),
           fst_node(vertices),
-          automorphisms(vertices, 500),
-          quotient_graph(vertices)
+          automorphisms(vertices, aut_limit),
+          quotient_graph(vertices),
+          proof_type(proof_type),
+          proof(proof_file)
     {
         input_coloring.copy(coloring);
     }
 
     void generateProof() {
-        // mora da se resetuje bojenje!!!
         coloring.copy(input_coloring);
+        proof.open();
         proof.coloringAxiom();
-        Vector<T> target_cells(2 * max_node.stabilized.m_size * coloring.size());
-        prove(true, target_cells);
+        prove(true);
         proof.pathAxiom();
-        size_t target_idx = 0;
         for(size_t idx = 0; idx < max_node.stabilized.m_size; idx++) {
-            Vector<T> cell_content(coloring.size());
-            while(target_cells[target_idx] != coloring.size())
-                cell_content.push(target_cells[target_idx++]);
-            target_idx++;
-            proof.extendPath(idx, max_node.stabilized, cell_content, max_node.stabilized[idx]);
+            proof.extendPath(idx, max_node.stabilized, targetCell(max_node.coloring, idx), max_node.stabilized[idx]);
         }
         proof.canonicalLeaf(max_node.stabilized, max_node.permutation.m_forward);
+        proof.close();
+        std::cerr << "Proof size: " << statistics.proof_size << std::endl;
     }
 
     // returns whether the whole subtree has been pruned
-    bool prove(bool canon_path, Vector<T>& target_cells) {
+    bool prove(bool canon_path) {
         statistics.proof_size++;
 
         T level = stabilized.m_size;
@@ -79,22 +86,13 @@ public:
 
         proof.invariantAxiom(stabilized);
 
-        if(invariants.back() > max_node.invariants[level]) {
-            std::cerr << "Problem" << std::endl;
-            for(size_t idx = 0; idx < stabilized.m_size; idx++)
-                std::cerr << (size_t)stabilized[idx] << " (" << (size_t)invariants[idx + 1] << ") ";
-            std::cerr << std::endl;
-            for(size_t idx = 0; idx < max_node.stabilized.m_size; idx++)
-                std::cerr << (size_t)max_node.stabilized[idx] << " (" << (size_t)max_node.invariants[idx + 1] << ") ";
-            std::cerr << std::endl;
-        }
+        assert(invariants.back() <= max_node.invariants[level]);
 
         if(invariants.back() != max_node.invariants[level]) {
             proof.pruneInvariant(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
             unrefine();
             return true;
         }
-
 
         if(stabilized.m_size > 0) {
             canon_path = canon_path && stabilized.back() == max_node.stabilized[level - 1];
@@ -104,114 +102,43 @@ public:
         size_t cell_idx;
         Array<T> cell_content = targetCell(cell_idx);
 
-        if(canon_path && cell_content.m_size > 0) {
-            for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++)
-                target_cells.push(*ptr);
-            target_cells.push(coloring.size());
-        }
-
         if(cell_content.m_size > 0)
             proof.targetCell(stabilized, coloring);
 
         Partition<T> orbit_partition(coloring.size());
         size_t aut_counter = 0;
-
         BitArray axiom_written(coloring.size());
-
         size_t pruned_count = 0;
-
         if(canon_path && cell_content.m_size > 0) {
             individualize(cell_idx, max_node.stabilized[level], true);
-            //std::cerr << "ENTERING " << (size_t)max_node.stabilized[level] << std::endl;
-            //all_pruned = all_pruned && prove(canon_path, target_cells);
-            pruned_count += prove(canon_path, target_cells);
+            pruned_count += prove(canon_path);
             unindividualize(cell_idx);
         }
-
         for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++) {
             if(canon_path && *ptr == max_node.stabilized[level])
                 continue;
 
-            auto onMerge = [&](size_t aut_idx, T vertex1, T vertex2) {
-                if(!axiom_written[vertex1]) {
-                    proof.orbitsAxiom(vertex1, stabilized);
-                    axiom_written.set(vertex1);
-                }
-                if(!axiom_written[vertex2]) {
-                    proof.orbitsAxiom(vertex2, stabilized);
-                    axiom_written.set(vertex2);
-                }
-                T p1 = orbit_partition.mcr(vertex1);
-                T p2 = orbit_partition.mcr(vertex2);
-                if(p1 != p2) {
-                    Vector<T> orbit1(coloring.size());
-                    Vector<T> orbit2(coloring.size());
-                    for(size_t idx = 0; idx < coloring.size(); idx++) {
-                        T p = orbit_partition.mcr(idx);
-                        if(p == p1)
-                            orbit1.push(idx);
-                        else if(p == p2)
-                            orbit2.push(idx);
-                    }
-                    Array<T> automorphism(coloring.size());
-                    std::iota(automorphism.m_data, automorphism.m_end, 0);
-                    // formiraj automorfizam na osnovu aut_idx
-                    auto ptr = automorphisms.elemCyclesBegin(aut_idx);
-                    auto end = automorphisms.elemCyclesEnd(aut_idx);
-                    T cycle_rep = automorphisms.m_points;
-                    while(ptr != end) {
-                        if(cycle_rep == automorphisms.m_points)
-                            cycle_rep = *ptr;
-                        else if(*ptr == automorphisms.m_points) {
-                            automorphism[*(ptr - 1)] = cycle_rep;
-                            cycle_rep = *ptr;
-                        }
-                        else
-                            automorphism[*(ptr - 1)] = *ptr;
-                        ptr++;
-                    }
-                    proof.mergeOrbits(orbit1, orbit2, stabilized, automorphism, vertex1, vertex2);
-                }
-            };
-            automorphisms.updatePartitionCaller(stabilized, orbit_partition, aut_counter, onMerge);
+            automorphisms.updatePartitionProof(stabilized, orbit_partition, aut_counter, proof, axiom_written);
             T p = orbit_partition.mcr(*ptr);
             if(p != *ptr) {
-                Vector<T> orbit(cell_content.m_size);
-                for(size_t idx = 0; idx < coloring.size(); idx++)
-                    if(orbit_partition.mcr(idx) == p)
-                        orbit.push(idx);
-                proof.pruneOrbits(orbit, stabilized, p, *ptr);
+                proof.pruneOrbits(orbit_partition.classOf(*ptr), stabilized, p, *ptr);
                 pruned_count++;
                 continue;
             }
 
             individualize(cell_idx, *ptr, true);
-            //std::cerr << "ENTERING " << (size_t)*ptr << std::endl;
-            //all_pruned = all_pruned && prove(canon_path, target_cells);
-            pruned_count += prove(canon_path, target_cells);
+            pruned_count += prove(canon_path);
             unindividualize(cell_idx);
         }
 
-        if(cell_content.m_size > 0) {
-            if(canon_path)
-                assert(pruned_count == cell_content.m_size - 1);
-            else
-                assert(pruned_count == cell_content.m_size);
-        }
-
-        //if(cell_content.m_size == 0)
-            //std::cerr << "LEAF" << std::endl;
-
-        /*if(!all_pruned && !canon_path)
-            std::cerr << "PROBLEM" << std::endl;*/
-
         if(cell_content.m_size > 0 && pruned_count == cell_content.m_size) {
-            proof.pruneParent(stabilized, cell_content);
+            proof.pruneParent(level, stabilized, cell_content);
             unrefine();
             return true;
         }
 
-        if(cell_content.m_size == 0 && !canon_path/*graph.less(coloring.m_permutation.m_forward, max_node.permutation.m_inverse)*/) {
+        if(cell_content.m_size == 0 && !canon_path) {
+            // sta ako je cvor kraci od max_node?! -> onda svakako pruneLeaf :)
             proof.pruneLeaf(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
             unrefine();
             return true;
@@ -222,7 +149,21 @@ public:
     }
 
     const Permutation<T>& solve() {
-        solve(PathType::MaxPath | PathType::AutPath);
+        if(proof_type == ProofType::SearchTree) {
+            proof.open();
+            proof.coloringAxiom();
+            solve(true, true);
+            proof.pathAxiom();
+            coloring.copy(max_node.coloring);
+            for(size_t idx = 0; idx < max_node.stabilized.m_size; idx++) {
+                proof.extendPath(idx, max_node.stabilized, targetCell(max_node.coloring, idx), max_node.stabilized[idx]);
+            }
+            proof.canonicalLeaf(max_node.stabilized, max_node.permutation.m_forward);
+            proof.close();
+        }
+        else {
+            solve(true, true);
+        }
         std::cerr << "Tree size: " << statistics.tree_size << std::endl;
         std::cerr << "Bad nodes: " << statistics.bad_nodes << std::endl;
         std::cerr << "Aut size: " << automorphisms.m_elements << std::endl;
@@ -231,106 +172,122 @@ public:
         std::cerr << "Aut path nodes: " << statistics.aut_nodes << std::endl;
         std::cerr << "Max path length: " << max_node.invariants.m_size << std::endl;
         std::cerr << "Fst path length: " << fst_node.invariants.m_size << std::endl;
-        generateProof();
-        std::cerr << "Proof size: " << statistics.proof_size << std::endl;
         return max_node.permutation;
     }
 
-    T solve(uint8_t flags) {
+    // returns backjump level if there is one
+    // returns previous level if the whole subtree has been proven pruned
+    // returns current level if not every node has been proven pruned
+    T solve(bool max_path, bool aut_path) {
         statistics.tree_size++;
-
-        /*struct OnReturn {
-            AlgorithmDFS* m_context;
-            OnReturn(AlgorithmDFS* context) : m_context(context) {}
-            ~OnReturn() { m_context->unrefine(); }
-        } on_return(this);*/
 
         assert(invariants.m_size <= stabilized.m_size);
         T level = stabilized.m_size;
 #ifdef DEBUG_OUT
         std::cerr << std::string(2 * level, ' ') << "I " << coloring << std::endl;
 #endif
-        refine();
+        refine(proof_type == ProofType::SearchTree);
 #ifdef DEBUG_OUT
         std::cerr << std::string(2 * level, ' ') << "R " << coloring << std::endl;
         std::cerr << std::string(2 * level, ' ') << (size_t) invariants.back() << std::endl;
 #endif
-        /*
-        if(!refine()) // zameniti sa refine() == BAD_PATH
-            return level;
-        */
+
+        if(proof_type == ProofType::SearchTree)
+            proof.invariantAxiom(stabilized);
 
         // update max_path, aut_path nodes
         if(!fst_node.is_leaf)
             fst_node.invariants.push(invariants.back());
 
-        bool max_path = (bool)(flags & PathType::MaxPath) &&
-                         (max_node.invariants.m_size <= level ||
-                          invariants.back() >= max_node.invariants[level]);
-        bool aut_path = (bool)(flags & PathType::AutPath) &&
-                        fst_node.invariants.m_size > level &&
-                        invariants.back() == fst_node.invariants[level];
+        int max_cmp = -1;
+        if(max_path) {
+            if(max_node.invariants.m_size <= level || invariants.back() > max_node.invariants[level])
+                max_cmp = 1;
+            else if(invariants.back() == max_node.invariants[level])
+                max_cmp = 0;
+            else
+                max_cmp = -1;
+        }
 
-        if(max_path)
+        aut_path = aut_path &&
+                   fst_node.invariants.m_size > level &&
+                   invariants.back() == fst_node.invariants[level];
+
+        bool pruned = false;
+        if(proof_type == ProofType::SearchTree && max_path && max_cmp < 0) {
+            proof.pruneInvariant(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
+            pruned = true;
+        }
+        max_path = max_cmp >= 0;
+
+        if(max_cmp >= 0)
             statistics.max_nodes++;
         if(aut_path)
             statistics.aut_nodes++;
-#ifdef DEBUG_OUT
-        std::cerr << std::string(2 * level, ' ');
-        if(max_path) std::cerr << "MAX ";
-        if(aut_path) std::cerr << "AUT ";
-        if(!max_path && !aut_path) std::cerr << "BAD ";
-        std::cerr << std::endl;
-#endif
 
-        if(!max_path && !aut_path) {
+        if(max_cmp < 0 && !aut_path) {
             statistics.bad_nodes++;
             unrefine();
-            return level;
+            return level - 1;
         }
+
         if(max_path) {
-            max_node.lca_level = level;
-
-            if(max_node.invariants.m_size > level && invariants.back() > max_node.invariants[level])
-                max_node.invariants.pop(level);
-
-            if(max_node.invariants.m_size <= level) {
+            if(!max_node.is_leaf) {
                 max_node.invariants.push(invariants.back());
+                max_node.lca_level = level;
+            }
+            else if(max_cmp == 0) {
+                if(proof_type == ProofType::SearchTree) {
+                    proof.invariantsEqual(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
+                    proof.invariantsEqualSym(level, max_node.stabilized, stabilized);
+                }
+            }
+            else if(max_cmp > 0) {
+                if(proof_type == ProofType::SearchTree) {
+                    if(max_node.invariants.m_size > level)
+                        proof.pruneInvariant(level, stabilized, coloring, max_node.stabilized, max_node.coloring);
+                    else
+                        proof.pruneLeaf(level, stabilized, coloring, max_node.stabilized, max_node.coloring);
+                    for(size_t l = level - 1; l > max_node.lca_level; l--)
+                        proof.pruneParent(l, max_node.stabilized, targetCell(max_node.coloring, l));
+                }
+
                 max_node.is_leaf = false;
+                max_node.lca_level = level;
+                max_node.invariants.pop(level);
+                max_node.invariants.push(invariants.back());
+                max_cmp = 0;
             }
         }
 
-        flags = 0;
-        flags |= max_path ? PathType::MaxPath : 0;
-        flags |= aut_path ? PathType::AutPath : 0;
-
         size_t cell_idx;
         Array<T> cell_content = targetCell(cell_idx);
-#ifdef DEBUG_OUT
-        std::cerr << std::string(2 * level, ' ') << "Target cell: ";
-        for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++)
-            std::cerr << (size_t) *ptr << ' ';
-        std::cerr << std::endl;
-#endif
+
+        if(proof_type == ProofType::SearchTree && cell_content.m_size > 0)
+            proof.targetCell(stabilized, coloring);
+
         Partition<T> orbit_partition(coloring.size());
         size_t aut_counter = 0;
+        BitArray axiom_written(coloring.size());
+        size_t pruned_count = 0;
         for(auto ptr = cell_content.m_data; ptr != cell_content.m_end; ptr++) {
             if(ptr > cell_content.m_data) {
-                if(level != fst_node.lca_level) {
+                if(proof_type == ProofType::SearchTree)
+                    automorphisms.updatePartitionProof(stabilized, orbit_partition, aut_counter, proof, axiom_written);
+                else
                     automorphisms.updatePartition(stabilized, orbit_partition, aut_counter);
-                    if(orbit_partition.mcr(*ptr) != *ptr) {
-                        statistics.orbit_prunes++;
-                        continue;
-                    }
-                }
-                else if(automorphisms.m_orbit_partition.mcr(*ptr) != *ptr) {
+                T p = orbit_partition.mcr(*ptr);
+                if(p != *ptr) {
+                    if(proof_type == ProofType::SearchTree)
+                        proof.pruneOrbits(orbit_partition.classOf(*ptr), stabilized, p, *ptr);
                     statistics.orbit_prunes++;
+                    pruned_count++;
                     continue;
                 }
             }
 
-            individualize(cell_idx, *ptr);
-            T backjump = solve(flags);
+            individualize(cell_idx, *ptr, proof_type == ProofType::SearchTree);
+            T backjump = solve(max_path, aut_path);
             unindividualize(cell_idx);
 
             if(level > backjump) {
@@ -338,63 +295,103 @@ public:
                 return backjump;
             }
 
+            if(proof_type == ProofType::SearchTree && level == backjump) {
+                automorphisms.updatePartitionProof(stabilized, orbit_partition, aut_counter, proof, axiom_written);
+                T p = orbit_partition.mcr(*ptr);
+                if(p != *ptr)
+                    proof.pruneOrbits(orbit_partition.classOf(*ptr), stabilized, p, *ptr);
+                pruned_count++;
+            }
+
             fst_node.lca_level = std::min(fst_node.lca_level, level);
             max_node.lca_level = std::min(max_node.lca_level, level);
         }
 
-        if(cell_content.m_size == 0) {
-            if(max_path && (!max_node.is_leaf || (max_node.invariants.m_size == (size_t) level + 1 && graph.less(max_node.permutation.m_inverse, coloring.m_permutation.m_forward)))) {
-                max_node.is_leaf = true;
-                max_node.lca_level = level;
-                max_node.permutation.copyInv(coloring.m_permutation);
+        if(proof_type == ProofType::SearchTree && cell_content.m_size > 0 && pruned_count == cell_content.m_size) {
+            proof.pruneParent(level, stabilized, cell_content);
+            unrefine();
+            return level - 1;
+        }
 
-                max_node.stabilized.copy(stabilized);
-                max_node.coloring.copy(coloring);
+        if(cell_content.m_size == 0) {
+            if(!fst_node.is_leaf) {
+                setLeaf(fst_node);
             }
 
-            if(!fst_node.is_leaf) {
-                fst_node.is_leaf = true;
-                fst_node.lca_level = level;
-                fst_node.permutation.copyInv(coloring.m_permutation);
+            if(max_path) {
+                if(max_node.is_leaf) {
+                    if(proof_type == ProofType::SearchTree &&
+                       (max_node.invariants.m_size > (size_t) level + 1 ||
+                        graph.less(coloring.m_permutation.m_forward, max_node.permutation.m_inverse))) {
+                        proof.pruneLeaf(level, max_node.stabilized, max_node.coloring, stabilized, coloring);
+                        pruned = true;
+                    }
+                    if(max_node.invariants.m_size == (size_t) level + 1 && graph.less(max_node.permutation.m_inverse, coloring.m_permutation.m_forward)) {
+                        if(proof_type == ProofType::SearchTree) {
+                            proof.pruneLeaf(level, stabilized, coloring, max_node.stabilized, max_node.coloring);
+                            for(size_t l = level - 1; l > max_node.lca_level; l--)
+                                proof.pruneParent(l, stabilized, targetCell(max_node.coloring, l));
+                        }
+                        setLeaf(max_node);
+                    }
+                }
+                else {
+                    setLeaf(max_node);
+                }
             }
 
 #ifdef DEBUG_NO_AUT
             unrefine();
-            return level;
+            return pruned? level - 1 : level;
 #endif
 
-            //if(fst_node.lca_level != level) {
-                Array<T> leaf_quotient(coloring.size());
-                for(size_t idx = 0; idx < leaf_quotient.m_size; idx++)
-                    //leaf_quotient[idx] = fst_node.permutation.m_inverse[coloring.m_permutation.m_inverse[idx]];
-                    leaf_quotient[idx] = coloring.m_permutation.m_forward[fst_node.permutation.m_forward[idx]];
+            Array<T> leaf_quotient(coloring.size());
+            bool identity_permutation = true;
+            for(size_t idx = 0; idx < leaf_quotient.m_size; idx++) {
+                leaf_quotient[idx] = coloring.m_permutation.m_forward[fst_node.permutation.m_forward[idx]];
+                identity_permutation = identity_permutation && (leaf_quotient[idx] == idx);
+            }
 
-                if(graph.isAutomorphism(leaf_quotient)) {
-                    automorphisms.push(leaf_quotient);
-                    unrefine();
-                    return fst_node.lca_level;
-                }
-            //}
+            if(!identity_permutation && graph.isAutomorphism(leaf_quotient)) {
+                /*if(proof_type == ProofType::SearchTree)
+                    proof.pruneAutomorphism(fst_node.lca_level + 1, fst_node.stabilized, stabilized, leaf_quotient);*/
+                automorphisms.push(leaf_quotient);
+                unrefine();
+#ifdef DEBUG_OUT
+                std::cerr << std::string(2 * stabilized.m_size, ' ') << "Backjump (fst): " << (size_t) fst_node.lca_level << std::endl;
+#endif
+                return fst_node.lca_level;
+            }
 
-            //if(max_node.lca_level != level) {
-                //Array<T> leaf_quotient(coloring.size());
-                for(size_t idx = 0; idx < leaf_quotient.m_size; idx++)
-                    //leaf_quotient[idx] = max_node.permutation.m_inverse[coloring.m_permutation.m_inverse[idx]];
-                    leaf_quotient[idx] = coloring.m_permutation.m_forward[max_node.permutation.m_forward[idx]];
 
-                if(graph.isAutomorphism(leaf_quotient)) {
-                    automorphisms.push(leaf_quotient);
-                    unrefine();
-                    return automorphisms.m_orbit_partition.mcr(stabilized[fst_node.lca_level]) != stabilized[fst_node.lca_level] ? fst_node.lca_level : max_node.lca_level;
-                }
-            //}
+            identity_permutation = true;
+            for(size_t idx = 0; idx < leaf_quotient.m_size; idx++) {
+                leaf_quotient[idx] = coloring.m_permutation.m_forward[max_node.permutation.m_forward[idx]];
+                identity_permutation = identity_permutation && (leaf_quotient[idx] == idx);
+            }
+
+            if(!identity_permutation && graph.isAutomorphism(leaf_quotient)) {
+                /*if(proof_type == ProofType::SearchTree)
+                    proof.pruneAutomorphism(max_node.lca_level + 1, max_node.stabilized, stabilized, leaf_quotient);*/
+                automorphisms.push(leaf_quotient); // onMerge
+                unrefine();
+                // if(mcr != stabilized[blabla])
+                //   orbit prune
+                // else
+                //   automorphism prune
+#ifdef DEBUG_OUT
+                std::cerr << std::string(2 * stabilized.m_size, ' ') << "Backjump: " << (size_t) max_node.lca_level << std::endl;
+#endif
+                //return max_node.lca_level;
+                return automorphisms.m_orbit_partition.mcr(stabilized[fst_node.lca_level]) != stabilized[fst_node.lca_level] ? fst_node.lca_level : max_node.lca_level;
+            }
         }
 
         unrefine();
-        return level;
+        return pruned ? level - 1 : level;
     }
 
-    void individualize(size_t cell_idx, T vertex, bool proving = false) {
+    void individualize(size_t cell_idx, T vertex, bool proving) {
         assert(coloring.m_cell_end[cell_idx] - cell_idx > 1);
         if(proving)
             proof.individualize(stabilized, vertex, coloring);
@@ -416,14 +413,11 @@ public:
         coloring.m_cell_end[cell_idx] = coloring.m_cell_end[cell_idx + 1];
     }
 
-    template<typename ActiveSet, bool RootLevel, bool RotateCells>
-    void refine1(size_t work_cell, ActiveSet& active_cells, HashType& invariant) {
+    template<typename ActiveSet>
+    void refine1(size_t work_cell, ActiveSet& active_cells) {
 #ifdef DEBUG_OUT
-        std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine1" << std::endl;
+        //std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine1" << std::endl;
 #endif
-        if constexpr (!RootLevel)
-            hash::sequential32u(invariant, work_cell);
-
         size_t cell_beg = 0, cell_end = coloring.m_cell_end[0];
         size_t split = 0; // [cell_beg, split), [split, idx)
         for(size_t idx = 0; idx < coloring.size(); idx++) {
@@ -436,37 +430,15 @@ public:
                     coloring.m_cell_end[split] = cell_end;
                     coloring.m_cell_level[split] = stabilized.m_size;
 
-                    if constexpr (RotateCells) {
-                        if(split - cell_beg >= cell_end - split) {
-                            coloring.rotate(cell_beg, cell_end, stabilized.m_size);
-                            split = coloring.m_cell_end[cell_beg];
-                        }
-
-                        if(active_cells.contains(cell_beg))
-                            active_cells.push(split);
-                        else
-                            active_cells.push(cell_beg);
+                    if(split - cell_beg >= cell_end - split) {
+                        coloring.rotate(cell_beg, cell_end, stabilized.m_size);
+                        split = coloring.m_cell_end[cell_beg];
                     }
-                    else {
-                        if(active_cells.contains(cell_beg) || split - cell_beg >= cell_end - split)
-                            active_cells.push(split);
-                        else
-                            active_cells.push(cell_beg);
 
-                        if constexpr (!RootLevel) {
-                            hash::sequential32u(invariant, cell_beg);
-                            hash::sequential32u(invariant, 0);
-                            hash::sequential32u(invariant, split);
-                            hash::sequential32u(invariant, 1);
-                        }
-                    }
-                }
-                else if constexpr (!RootLevel) {
-                    hash::sequential32u(invariant, cell_beg);
-                    if(split == cell_end)
-                        hash::sequential32u(invariant, 0);
-                    if(split == cell_beg)
-                        hash::sequential32u(invariant, 1);
+                    if(active_cells.contains(cell_beg))
+                        active_cells.push(split);
+                    else
+                        active_cells.push(cell_beg);
                 }
 
                 if(cell_end < coloring.size()) {
@@ -480,14 +452,11 @@ public:
 #endif
     }
 
-    template<typename ActiveSet, bool RootLevel, bool RotateCells>
-    void refine2(size_t work_cell, ActiveSet& active_cells, HashType& invariant) {
+    template<typename ActiveSet>
+    void refine2(size_t work_cell, ActiveSet& active_cells) {
 #ifdef DEBUG_OUT
-        std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine2" << std::endl;
+        //std::cerr << std::string(2 * stabilized.m_size, ' ') << "refine2" << std::endl;
 #endif
-        if constexpr (!RootLevel)
-            hash::sequential32u(invariant, work_cell);
-
         size_t cell_beg = 0, cell_end = coloring.m_cell_end[0];
         size_t split1 = 0, split2 = cell_end; // [cell_beg, split1), [split1, idx), [split2, cell_end)
         size_t idx = 0;
@@ -513,48 +482,23 @@ public:
                     coloring.m_cell_end[split2] = cell_end;
                     coloring.m_cell_level[split2] = stabilized.m_size;
 
-                    if constexpr (RotateCells) {
-                        if(split1 - cell_beg >= split2 - split1 && split1 - cell_beg >= cell_end - split2) {
-                            coloring.rotate(cell_beg, cell_end, stabilized.m_size);
-                            split1 = coloring.m_cell_end[cell_beg];
-                            split2 = coloring.m_cell_end[split1];
-                        }
-                        else if(split2 - split1 >= cell_end - split2) {
-                            coloring.rotate(split1, cell_end, stabilized.m_size);
-                            split2 = coloring.m_cell_end[split1];
-                        }
+                    if(split1 - cell_beg >= split2 - split1 && split1 - cell_beg >= cell_end - split2) {
+                        coloring.rotate(cell_beg, cell_end, stabilized.m_size);
+                        split1 = coloring.m_cell_end[cell_beg];
+                        split2 = coloring.m_cell_end[split1];
+                    }
+                    else if(split2 - split1 >= cell_end - split2) {
+                        coloring.rotate(split1, cell_end, stabilized.m_size);
+                        split2 = coloring.m_cell_end[split1];
+                    }
 
-                        if(active_cells.contains(cell_beg)) {
-                            active_cells.push(split1);
-                            active_cells.push(split2);
-                        }
-                        else {
-                            active_cells.push(cell_beg);
-                            active_cells.push(split1);
-                        }
+                    if(active_cells.contains(cell_beg)) {
+                        active_cells.push(split1);
+                        active_cells.push(split2);
                     }
                     else {
-                        if(active_cells.contains(cell_beg) || (split1 - cell_beg >= split2 - split1 && split1 - cell_beg >= cell_end - split2)) {
-                            active_cells.push(split1);
-                            active_cells.push(split2);
-                        }
-                        else if(split2 - split1 >= cell_end - split2) {
-                            active_cells.push(cell_beg);
-                            active_cells.push(split2);
-                        }
-                        else {
-                            active_cells.push(cell_beg);
-                            active_cells.push(split1);
-                        }
-
-                        if constexpr (!RootLevel) {
-                            hash::sequential32u(invariant, cell_beg);
-                            hash::sequential32u(invariant, 0);
-                            hash::sequential32u(invariant, split1);
-                            hash::sequential32u(invariant, 1);
-                            hash::sequential32u(invariant, split2);
-                            hash::sequential32u(invariant, 2);
-                        }
+                        active_cells.push(cell_beg);
+                        active_cells.push(split1);
                     }
                 }
                 else if((cell_beg != split1 && split1 != split2) ||
@@ -566,47 +510,15 @@ public:
                     coloring.m_cell_end[split] = cell_end;
                     coloring.m_cell_level[split] = stabilized.m_size;
 
-                    if constexpr(RotateCells) {
-                        if(split - cell_beg >= cell_end - split) {
-                            coloring.rotate(cell_beg, cell_end, stabilized.m_size);
-                            split = coloring.m_cell_end[cell_beg];
-                        }
-
-                        if(active_cells.contains(cell_beg))
-                            active_cells.push(split);
-                        else
-                            active_cells.push(cell_beg);
+                    if(split - cell_beg >= cell_end - split) {
+                        coloring.rotate(cell_beg, cell_end, stabilized.m_size);
+                        split = coloring.m_cell_end[cell_beg];
                     }
-                    else {
-                        if(active_cells.contains(cell_beg) || split - cell_beg >= cell_end - split)
-                            active_cells.push(split);
-                        else
-                            active_cells.push(cell_beg);
 
-                        if constexpr (!RootLevel) {
-                            if(cell_beg != split1) {
-                                hash::sequential32u(invariant, cell_beg);
-                                hash::sequential32u(invariant, 0);
-                            }
-                            if(split1 != split2) {
-                                hash::sequential32u(invariant, split1);
-                                hash::sequential32u(invariant, 1);
-                            }
-                            if(split2 != cell_end) {
-                                hash::sequential32u(invariant, split2);
-                                hash::sequential32u(invariant, 2);
-                            }
-                        }
-                    }
-                }
-                else if constexpr (!RootLevel) {
-                    hash::sequential32u(invariant, cell_beg);
-                    if(split1 == cell_end)
-                        hash::sequential32u(invariant, 0);
-                    if(split1 == cell_beg && split2 == cell_end)
-                        hash::sequential32u(invariant, 1);
-                    if(split2 == cell_beg)
-                        hash::sequential32u(invariant, 2);
+                    if(active_cells.contains(cell_beg))
+                        active_cells.push(split);
+                    else
+                        active_cells.push(cell_beg);
                 }
 
                 if(cell_end < coloring.size()) {
@@ -621,10 +533,10 @@ public:
 #endif
     }
 
-    template<typename ActiveSet, bool RootLevel, bool RotateCells>
-    void refineN(size_t work_cell, ActiveSet& active_cells, HashType& invariant) {
+    template<typename ActiveSet>
+    void refineN(size_t work_cell, ActiveSet& active_cells) {
 #ifdef DEBUG_OUT
-        std::cerr << std::string(2 * stabilized.m_size, ' ') << "refineN" << std::endl;
+        //std::cerr << std::string(2 * stabilized.m_size, ' ') << "refineN" << std::endl;
 #endif
 
 #ifdef QT_QML_DEBUG
@@ -669,14 +581,6 @@ public:
             coloring.m_permutation.set(--cell_buckets[vertex.cell], vertex.vertex);
         }
 
-        /*Array<T> sorted(coloring.size());
-        std::copy(coloring.m_permutation.m_forward.m_data, coloring.m_permutation.m_forward.m_end, sorted.m_data);
-        for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx])
-            std::sort(sorted.m_data + cell_idx, sorted.m_data + coloring.m_cell_end[cell_idx], [&adj_count](T a, T b) { return adj_count[a] == adj_count[b] ? a < b : adj_count[a] < adj_count[b]; });
-        for(size_t idx = 0; idx < coloring.size(); idx++)
-            coloring.m_permutation.set(idx, sorted[idx]);
-        size_t cell_beg, cell_end;*/
-
 #ifdef QT_QML_DEBUG
         for(size_t cell = 0; cell < coloring.size(); cell = coloring.m_cell_end[cell]) {
             for(size_t idx = cell; idx < coloring.m_cell_end[cell]; idx++)
@@ -686,89 +590,36 @@ public:
         }
 #endif
 
-        if constexpr (!RootLevel)
-            hash::sequential32u(invariant, work_cell);
-
         size_t cell_prev, max_cell;
         for(cell_beg = 0; cell_beg != coloring.size(); cell_beg = cell_end) {
             cell_end = coloring.m_cell_end[cell_beg];
             assert(cell_end > cell_beg);
             cell_prev = cell_beg;
 
-            if constexpr (RotateCells) {
-                max_cell = cell_beg;
-                for(size_t idx = cell_beg + 1; idx != cell_end; idx++) {
-                    if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
-                        coloring.m_cell_end[cell_prev] = idx;
-                        coloring.m_cell_end[idx] = cell_end;
-                        coloring.m_cell_level[idx] = stabilized.m_size;
+            max_cell = cell_beg;
+            for(size_t idx = cell_beg + 1; idx != cell_end; idx++) {
+                if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
+                    coloring.m_cell_end[cell_prev] = idx;
+                    coloring.m_cell_end[idx] = cell_end;
+                    coloring.m_cell_level[idx] = stabilized.m_size;
 
-                        if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
-                            max_cell = cell_prev;
-                        cell_prev = idx;
-                        assert(cell_prev < coloring.size());
-                    }
-                }
-                if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
-                    max_cell = cell_prev;
-
-                coloring.rotate(max_cell, cell_end, stabilized.m_size);
-
-                if(active_cells.contains(cell_beg))
-                    for(size_t cell_idx = coloring.m_cell_end[cell_beg]; cell_idx != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
-                        active_cells.push(cell_idx);
-                else
-                    for(size_t cell_idx = cell_beg; coloring.m_cell_end[cell_idx] != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
-                        active_cells.push(cell_idx);
-            }
-            else {
-                if constexpr(!RootLevel) {
-                    hash::sequential32u(invariant, cell_beg);
-                    hash::sequential32u(invariant, adj_count[coloring[cell_beg]]);
-                }
-
-                if(active_cells.contains(cell_beg)) {
-                    for(size_t idx = cell_beg + 1; idx != cell_end; idx++)
-                        if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
-                            coloring.m_cell_end[cell_prev] = idx;
-                            coloring.m_cell_end[idx] = cell_end;
-                            coloring.m_cell_level[idx] = stabilized.m_size;
-                            if constexpr(!RootLevel) {
-                                hash::sequential32u(invariant, idx);
-                                hash::sequential32u(invariant, adj_count[coloring[idx]]);
-                            }
-                            cell_prev = idx;
-                            assert(cell_prev < coloring.size());
-
-                            active_cells.push(idx);
-                        }
-                }
-                else {
-                    max_cell = cell_beg;
-                    for(size_t idx = cell_beg + 1; idx != cell_end; idx++) {
-                        if(adj_count[coloring[idx]] != adj_count[coloring[idx - 1]]) {
-                            coloring.m_cell_end[cell_prev] = idx;
-                            coloring.m_cell_end[idx] = cell_end;
-                            coloring.m_cell_level[idx] = stabilized.m_size;
-                            if constexpr(!RootLevel) {
-                                hash::sequential32u(invariant, idx);
-                                hash::sequential32u(invariant, adj_count[coloring[idx]]);
-                            }
-
-                            if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
-                                max_cell = cell_prev;
-                            cell_prev = idx;
-                            assert(cell_prev < coloring.size());
-                        }
-                    }
                     if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
                         max_cell = cell_prev;
-
-                    for(size_t cell_idx = cell_beg; cell_idx != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
-                        if(cell_idx != max_cell)
-                            active_cells.push(cell_idx);
+                    cell_prev = idx;
+                    assert(cell_prev < coloring.size());
                 }
             }
+            if(coloring.cellSize(cell_prev) > coloring.cellSize(max_cell))
+                max_cell = cell_prev;
+
+            coloring.rotate(max_cell, cell_end, stabilized.m_size);
+
+            if(active_cells.contains(cell_beg))
+                for(size_t cell_idx = coloring.m_cell_end[cell_beg]; cell_idx != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
+                    active_cells.push(cell_idx);
+            else
+                for(size_t cell_idx = cell_beg; coloring.m_cell_end[cell_idx] != cell_end; cell_idx = coloring.m_cell_end[cell_idx])
+                    active_cells.push(cell_idx);
 #ifdef DEBUG_SLOW_ASSERTS
             assertCellSplittingValid(coloring, cell_beg, cell_end, adj_count, stabilized.m_size);
 #endif
@@ -780,49 +631,32 @@ public:
     }
 
     template<typename ActiveSet>
-    void refineCells(size_t work_cell, size_t work_size, ActiveSet& active_cells, HashType& invariant) {
-        //if(stabilized.m_size == 0) {
-            if(work_size == 1)
-                refine1<ActiveSet, true, true>(work_cell, active_cells, invariant);
-            else if(work_size == 2)
-                refine2<ActiveSet, true, true>(work_cell, active_cells, invariant);
-            else
-                refineN<ActiveSet, true, true>(work_cell, active_cells, invariant);
-        /*}
-        else {
-            if(work_size == 1)
-                refine1<false>(work_cell, active_cells, invariant);
-            else if(work_size == 2)
-                refine2<false>(work_cell, active_cells, invariant);
-            else
-                refineN<false>(work_cell, active_cells, invariant);
-        }*/
+    void refineCells(size_t work_cell, size_t work_size, ActiveSet& active_cells) {
+        if(work_size == 1)
+            refine1<ActiveSet>(work_cell, active_cells);
+        else if(work_size == 2)
+            refine2<ActiveSet>(work_cell, active_cells);
+        else
+            refineN<ActiveSet>(work_cell, active_cells);
     }
 
-    void refine(bool proving = false) {
+    void refine(bool proving) {
         PriorityQueue<T> active_cells(coloring.size());
-        //Vector<T> active_cells(coloring.size());
-        //BitArray is_active(coloring.size());
 
         if(stabilized.m_size > 0) {
             T cell_idx = coloring.m_permutation.m_inverse[stabilized.back()];
             active_cells.push(cell_idx);
-            //is_active.set(cell_idx);
             assert(coloring.m_cell_end[cell_idx] != 0);
         }
         else {
             for(size_t cell_idx = 0; cell_idx != coloring.size(); cell_idx = coloring.m_cell_end[cell_idx]) {
                 active_cells.push(cell_idx);
-                //is_active.set(cell_idx);
                 assert(coloring.m_cell_end[cell_idx] != 0);
             }
         }
 
         HashType invariant = 0;
         while(active_cells.m_size > 0) {
-            /*size_t work_cell = active_cells.back();
-            active_cells.pop();
-            is_active.clear(work_cell);*/
             size_t work_cell = active_cells.pop();
 
             assert(coloring.m_cell_end[work_cell] != 0);
@@ -830,14 +664,14 @@ public:
             // For proof only
             size_t cells = 0;
             Coloring<T> prev_coloring(coloring.size());
-            prev_coloring.copy(coloring);
             if(proving) {
+                prev_coloring.copy(coloring);
                 for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx = coloring.m_cell_end[cell_idx])
                     cells++;
             }
 
             size_t work_size = coloring.m_cell_end[work_cell] - work_cell;
-            refineCells(work_cell, work_size, active_cells, invariant);
+            refineCells(work_cell, work_size, active_cells);
 
             // For proof only
             if(proving) {
@@ -852,6 +686,7 @@ public:
             assertColoringSplittingValid(coloring, graph, work_cell, work_size);
 #endif
 
+            // Stop if discrete
             size_t cell_idx = 0;
             while(coloring.cellSize(cell_idx) == 1)
                 cell_idx++;
@@ -859,7 +694,7 @@ public:
                 break;
 
 #ifdef DEBUG_OUT
-            std::cerr << std::string(2 * stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
+            //std::cerr << std::string(2 * stabilized.m_size, ' ') << coloring << " : " << work_cell << std::endl;
 #endif
         }
         if(proving)
@@ -869,25 +704,7 @@ public:
         assertEquitableColoring(coloring, graph);
 #endif
         invariant = calculateQuotientInvariantIncrement();
-        //invariant = calculateMultisetQuotientInvariant();
         invariants.push(invariant);
-    }
-
-    HashType calculateQuotientInvariant() {
-        HashType invariant = 0;
-        if(stabilized.m_size == 0)
-            return invariant;
-        for(size_t cell = 0; cell < coloring.size(); cell = coloring.m_cell_end[cell]) {
-            hash::sequential32u(invariant, cell);
-            hash::sequential32u(invariant, coloring.cellSize(cell));
-            for(size_t oth_cell = 0; oth_cell < coloring.size(); oth_cell = coloring.m_cell_end[oth_cell]) {
-                T adj_count = 0;
-                for(size_t idx = cell; idx < coloring.m_cell_end[cell]; idx++)
-                    adj_count += graph.adjacent(coloring.m_permutation[oth_cell], coloring.m_permutation[idx]);
-                hash::sequential32u(invariant, adj_count);
-            }
-        }
-        return invariant;
     }
 
     HashType calculateMorphiInvariant() {
@@ -916,15 +733,6 @@ public:
             }
         }
 
-        return invariant;
-    }
-
-    HashType calculateCellSequenceInvariant() {
-        HashType invariant = 0;
-        if(stabilized.m_size == 0)
-            return invariant;
-        for(size_t cell_idx = 0; cell_idx < coloring.size(); cell_idx++)
-            hash::sequential32u(invariant, cell_idx);
         return invariant;
     }
 
@@ -979,15 +787,6 @@ public:
             if(is_new[cell_idx] && !is_old[cell_idx])
                 hash::multiset32add(invariant, cell_idx);
         }
-        /*std::cerr << "Depth: " << stabilized.m_size << std::endl;
-        std::cerr << "Old cells: ";
-        for(size_t idx = 0; idx < old_cells.m_size; idx++)
-            std::cerr << old_cells[idx] << ' ';
-        std::cerr << std::endl;
-        std::cerr << "New cells: ";
-        for(size_t idx = 0; idx < new_cells.m_size; idx++)
-            std::cerr << new_cells[idx] << ' ';
-        std::cerr << std::endl;*/
         // Update Old <- New and New <- Old
         for(size_t old_idx = 0; old_idx < old_cells.m_size; old_idx++) {
             size_t old_cell = old_cells[old_idx];
@@ -1001,7 +800,7 @@ public:
                         prev_adj_count = quotient_graph.at(new_cell, old_cell);
 
                         size_t new_cell_end = coloring.m_cell_end[new_cell];
-                        while(new_cell_end < coloring.size() && !is_old[new_cell_end]/*coloring.m_cell_level[new_cell_end] == stabilized.m_size*/)
+                        while(new_cell_end < coloring.size() && !is_old[new_cell_end])
                             new_cell_end = coloring.m_cell_end[new_cell_end];
                         prev_cell_size = new_cell_end - new_cell;
                         assert(prev_cell_size > 0);
@@ -1061,14 +860,6 @@ public:
     void calculateQuotientInvariantDecrement() {
         if(stabilized.m_size == 0)
             return;
-        auto hashTriple = [](HashType x, HashType y, HashType z) {
-            HashType hash = 0;
-            hash::sequential32u(hash, x);
-            hash::sequential32u(hash, y);
-            hash::sequential32u(hash, z);
-            return hash;
-        };
-        HashType invariant = invariants.back();
         BitArray is_old(coloring.size());
         BitArray is_new(coloring.size());
         Vector<size_t> old_cells(coloring.size());
@@ -1084,18 +875,7 @@ public:
                 old_cells.push(cell_idx);
             if(is_new[cell_idx])
                 new_cells.push(cell_idx);
-            if(is_new[cell_idx] && !is_old[cell_idx])
-                hash::multiset32add(invariant, cell_idx);
         }
-        /*std::cerr << "Depth: " << stabilized.m_size << std::endl;
-        std::cerr << "Old cells: ";
-        for(size_t idx = 0; idx < old_cells.m_size; idx++)
-            std::cerr << old_cells[idx] << ' ';
-        std::cerr << std::endl;
-        std::cerr << "New cells: ";
-        for(size_t idx = 0; idx < new_cells.m_size; idx++)
-            std::cerr << new_cells[idx] << ' ';
-        std::cerr << std::endl;*/
         // Update Old <- New and New <- Old
         for(size_t old_idx = 0; old_idx < old_cells.m_size; old_idx++) {
             size_t old_cell = old_cells[old_idx];
@@ -1105,7 +885,6 @@ public:
                 assert(new_cell != old_cell);
                 if(new_cell < old_cell) {
                     size_t adj_count = quotient_graph.at(new_cell, old_cell);
-                    hash::multiset32sub(invariant, hashTriple(new_cell, old_cell, adj_count));
                     if(is_old[new_cell]) {
                         size_t new_cell_size = coloring.cellSize(new_cell);
                         size_t new_cell_end = coloring.m_cell_end[new_cell];
@@ -1116,12 +895,6 @@ public:
                         adj_count = adj_count * prev_cell_size / new_cell_size;
 
                         quotient_graph.set(new_cell, old_cell, adj_count);
-                        hash::multiset32add(invariant, hashTriple(new_cell, old_cell, adj_count));
-                    }
-                }
-                else {
-                    if(!is_old[new_cell]) {
-                        hash::multiset32sub(invariant, hashTriple(old_cell, new_cell, quotient_graph.at(old_cell, new_cell)));
                     }
                 }
             }
@@ -1131,7 +904,6 @@ public:
             size_t cell_idx = new_cells[idx];
             for(size_t jdx = 0; jdx <= idx; jdx++) {
                 size_t cell_jdx = new_cells[jdx];
-                hash::multiset32sub(invariant, hashTriple(cell_jdx, cell_idx, quotient_graph.at(cell_jdx, cell_idx)));
                 if(is_old[cell_idx] && is_old[cell_jdx]) {
                     size_t end_jdx = coloring.m_cell_end[cell_jdx];
                     while(end_jdx < coloring.size() && !is_old[end_jdx])
@@ -1139,12 +911,10 @@ public:
                     T adj_count = 0;
                     for(size_t kdx = cell_jdx; kdx < end_jdx; kdx++)
                         adj_count += graph.adjacent(coloring[kdx], coloring[cell_idx]);
-                    hash::multiset32add(invariant, hashTriple(cell_jdx, cell_idx, adj_count));
                     quotient_graph.set(cell_jdx, cell_idx, adj_count);
                 }
             }
         }
-        //return invariant;
     }
 
     void unrefine() {
@@ -1164,6 +934,30 @@ public:
         }
         if(invariants.m_size > 0)
             invariants.pop();
+    }
+
+    Array<T> targetCell(const Coloring<T>& coloring, size_t level) {
+        size_t cell_idx = 0;
+        size_t cell_end;
+        while(cell_idx < coloring.size()) {
+            cell_end = coloring.m_cell_end[cell_idx];
+            while(cell_end < coloring.size() && coloring.m_cell_level[cell_end] > level)
+                cell_end = coloring.m_cell_end[cell_end];
+            if(cell_end - cell_idx > 1)
+                break;
+            cell_idx = cell_end;
+        }
+
+        if(cell_idx == coloring.size())
+            return Array<T>(0);
+
+        auto beg_ptr = coloring.m_permutation.m_forward.m_data + (size_t) cell_idx;
+        auto end_ptr = coloring.m_permutation.m_forward.m_data + (size_t) cell_end;
+        Array<T> cell_content(end_ptr - beg_ptr);
+        std::copy(beg_ptr, end_ptr, cell_content.m_data);
+        std::sort(cell_content.m_data, cell_content.m_end);
+
+        return cell_content;
     }
 
     Array<T> targetCell(size_t& cell_idx) {
@@ -1199,6 +993,7 @@ public:
     SymmetricMatrix<T> quotient_graph;
 
     // Proof
+    ProofType proof_type;
     Proof<T> proof;
 
     // Statistics
@@ -1214,4 +1009,4 @@ public:
 
 } // namespace
 
-#endif // ALGORITHMS_H
+#endif // ALGORITHM_ARGO_H

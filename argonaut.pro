@@ -13,8 +13,9 @@ SOURCES += \
         main.cpp
 
 HEADERS += \
+    algorithm_argo.h \
+    algorithm_dfs.h \
     algorithm_selector.h \
-    algorithms.h \
     array.h \
     assertions.h \
     bitarray.h \
@@ -28,4 +29,5 @@ HEADERS += \
     permutation.h \
     priority_queue.h \
     proof.h \
+    utility.h \
     vector.h

@@ -4,10 +4,11 @@
 
 #include "array.h"
 #include "permutation.h"
-#include "algorithms.h"
+#include "algorithm_argo.h"
 #include "algorithm_selector.h"
 #include "group.h"
 #include "hash.h"
+#include "utility.h"
 
 void test_permutation() {
     morphi::Permutation<uint32_t> p(4);
@@ -240,20 +241,18 @@ void test_coloring_rotate() {
 }
 
 void test_graph_single(std::string filename, unsigned num_passes) {
-    std::ifstream input;
-    input.open(filename);
-    morphi::AlgorithmSelector selector(input, {.relabel = false});
-    input.close();
+    std::ifstream input(filename);
+    morphi::AlgorithmSelector selector(input, {.relabel = false, .proof_type = morphi::ProofType::SearchTree, .proof_file = "/home/idrecun/repos/argonaut/graphs/proof"});
 
-
-    std::ofstream output;
-    output.open(filename + ".log");
+    std::ofstream output(filename + ".log");
     auto coutBuffer = std::cout.rdbuf(output.rdbuf());
 
     clock_t start_time = clock();
     selector.run();
     std::cerr << "Time elapsed: " << (double)(clock() - start_time) / CLOCKS_PER_SEC << std::endl;
     std::cerr << "Finished initial pass for " << filename << std::endl;
+    std::cerr << "Checker: ";
+    std::system(("/home/idrecun/repos/isocert_private/iso/checker " + filename + " /home/idrecun/repos/argonaut/graphs/proof").c_str());
     while(--num_passes) {
         selector.relabel();
         start_time = clock();
@@ -263,16 +262,15 @@ void test_graph_single(std::string filename, unsigned num_passes) {
     }
 
     std::cout.rdbuf(coutBuffer);
-    output.close();
 }
 
-void test_graphs() {
     std::string test_files[] = {
-        //"/home/idrecun/repos/argonaut/graphs/milan.bliss",
-        //"/home/idrecun/repos/argonaut/graphs/regular.bliss",
-        //"/home/idrecun/repos/argonaut/graphs/square.bliss",
-        //"/home/idrecun/repos/argonaut/graphs/k33.bliss",
-        /*"/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-2",
+        //"/home/idrecun/repos/morphi/tests/undirected_dim/pp/pp-8-1",
+        "/home/idrecun/repos/argonaut/graphs/milan.bliss",
+        "/home/idrecun/repos/argonaut/graphs/regular.bliss",
+        "/home/idrecun/repos/argonaut/graphs/square.bliss",
+        "/home/idrecun/repos/argonaut/graphs/k33.bliss",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-2",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-3",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-4",
         "/home/idrecun/repos/morphi/tests/undirected_dim/latin/latin-5",
@@ -306,7 +304,7 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-15",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-20",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-25",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-30",
+        /*"/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-30",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-35",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-40",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-45",
@@ -320,7 +318,7 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-85",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-90",
         "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-95",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-100",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/grid/grid-2-100",*/
         "/home/idrecun/repos/morphi/tests/undirected_dim/lattice/lattice-4",
         "/home/idrecun/repos/morphi/tests/undirected_dim/lattice/lattice-5",
         "/home/idrecun/repos/morphi/tests/undirected_dim/lattice/lattice-30",
@@ -334,13 +332,13 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-8",
         "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-10",
         "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-20",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-30",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-40",*/
-        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-50",
-        /*"/home/idrecun/repos/morphi/tests/undirected_dim/ag/ag2-8",
+        /*"/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-30",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-40",
+        "/home/idrecun/repos/morphi/tests/undirected_dim/mz/mz-50",*/
+        "/home/idrecun/repos/morphi/tests/undirected_dim/ag/ag2-8",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-20",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-40",
-        "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-60",
+        /*"/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-60",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-80",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-100",
         "/home/idrecun/repos/morphi/tests/undirected_dim/cfi/cfi-120",
@@ -357,6 +355,8 @@ void test_graphs() {
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-73",
         "/home/idrecun/repos/morphi/tests/undirected_dim/sts/sts-79",*/
     };
+
+void test_graphs() {
     unsigned num_passes = 1;
     for(auto test_file : test_files) {
         test_graph_single(test_file, num_passes);
@@ -371,20 +371,20 @@ void test_graphs() {
     }
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-    srand(time(0));
-    morphi::global_alloc.reserve(1ull << 30);
+    morphi::ArgumentParser args(argc, argv);
+    if(!args.parsed) {
+        std::cerr << "Usage: " << argv[0] << " options...";
+        return -1;
+    }
 
-    // morphi::Array<int> arr = make_array();
-    // test_permutation();
-    // test_bitarray_onebyte();
+    morphi::global_alloc.reserve(args.mem_limit);
+    srand(time(0));
+
+    //morphi::AlgorithmSelector selector(std::cin, args.options);
     test_graphs();
-    // test_partition();
-    // test_group();
-    // test_multiset_hash();
-    // test_permutation_rotate();
-    // test_coloring_rotate();
+
 
     return 0;
 }

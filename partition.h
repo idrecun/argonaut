@@ -51,16 +51,21 @@ public:
             m_partition[pa].parent = pb;
             m_partition[pb].size += m_partition[pa].size;
             m_partition[pb].point = std::min(m_partition[pa].point, m_partition[pb].point);
-            /*if(m_partition[pa].point < m_partition[pb].point)
-                std::swap(m_partition[pa].point, m_partition[pb].point);*/
         }
         else {
             m_partition[pb].parent = pa;
             m_partition[pa].size += m_partition[pb].size;
             m_partition[pa].point = std::min(m_partition[pa].point, m_partition[pb].point);
-            /*if(m_partition[pb].point < m_partition[pa].point)
-                std::swap(m_partition[pa].point, m_partition[pb].point);*/
         }
+    }
+
+    Vector<T> classOf(T elem) {
+        T p = mcr(elem);
+        Vector<T> class_content(m_partition.m_size);
+        for(size_t idx = 0; idx < m_partition.m_size; idx++)
+            if(mcr(idx) == p)
+                class_content.push(idx);
+        return class_content;
     }
 
     Array<PartitionClass> m_partition;

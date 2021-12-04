@@ -11,7 +11,15 @@ template<typename T>
 class Proof {
 public:
 
-    Proof(std::string filename = "/home/idrecun/repos/argonaut/graphs/proof") : out(filename.c_str(), std::ios::out | std::ios::binary) {}
+    Proof(std::string filename) : proof_file(filename) {}
+
+    void open() {
+        out.open(proof_file.c_str(), std::ios::out | std::ios::binary);
+    }
+
+    void close() {
+        out.close();
+    }
 
     void writeUTF8(uint32_t code) {
         //std::cerr << code << ' ';
@@ -192,8 +200,14 @@ public:
         //std::cerr << std::endl;
     }
 
-    void orbitsAxiom(T vertex, const Vector<T>& node) {
+    void invariantsEqualSym(size_t level, const Vector<T>& node1, const Vector<T>& node2) {
         writeUTF8(7);
+        writeNode(node1, level);
+        writeNode(node2, level);
+    }
+
+    void orbitsAxiom(T vertex, const Vector<T>& node) {
+        writeUTF8(8);
         writeUTF8(vertex);
         writeNode(node);
         //std::cerr << std::endl;
@@ -202,7 +216,7 @@ public:
     void mergeOrbits(const Vector<T>& orbit1, const Vector<T>& orbit2,
                      const Vector<T>& node, const Array<T>& automorphism,
                      T vertex1, T vertex2) {
-        writeUTF8(8);
+        writeUTF8(9);
         writeNode(orbit1);
         writeNode(orbit2);
         writeNode(node);
@@ -215,7 +229,7 @@ public:
     void pruneInvariant(size_t level,
                         const Vector<T>& node1, const Coloring<T>& coloring1,
                         const Vector<T>& node2, const Coloring<T>& coloring2) {
-        writeUTF8(9);
+        writeUTF8(10);
         writeNode(node1, level);
         writeColoring(coloring1, level);
         writeNode(node2, level);
@@ -226,7 +240,7 @@ public:
     void pruneLeaf(size_t level,
                    const Vector<T>& node1, const Coloring<T>& coloring1,
                    const Vector<T>& node2, const Coloring<T>& coloring2) {
-        writeUTF8(10);
+        writeUTF8(11);
         writeNode(node1, level);
         writeColoring(coloring1, level);
         writeNode(node2, level);
@@ -234,8 +248,23 @@ public:
         //std::cerr << std::endl;
     }
 
-    void pruneOrbits(const Vector<T>& orbit, const Vector<T>& node, T vertex1, T vertex2) {
+    void pruneAutomorphism(size_t level, const Vector<T>& node1, const Vector<T>& node2, const Array<T>& automorphism) {
+        writeUTF8(12);
+        writeNode(node1, level);
+        writeNode(node2, level);
+        writeArray(automorphism);
+        //std::cerr << std::endl;
+    }
+
+    void pruneParent(size_t level, const Vector<T>& node, const Array<T>& cell) {
         writeUTF8(13);
+        writeNode(node, level);
+        writeArraySized(cell);
+        //std::cerr << std::endl;
+    }
+
+    void pruneOrbits(const Vector<T>& orbit, const Vector<T>& node, T vertex1, T vertex2) {
+        writeUTF8(14);
         writeNode(orbit);
         writeNode(node);
         writeUTF8(vertex1);
@@ -243,33 +272,27 @@ public:
         //std::cerr << std::endl;
     }
 
-    void pruneParent(const Vector<T>& node, const Array<T>& cell) {
-        writeUTF8(12);
-        writeNode(node);
-        writeArraySized(cell);
-        //std::cerr << std::endl;
-    }
-
     void pathAxiom() {
-        writeUTF8(14);
+        writeUTF8(15);
         //std::cerr << std::endl;
     }
 
-    void extendPath(size_t level, const Vector<T>& node, const Vector<T>& cell, T vertex) {
-        writeUTF8(15);
+    void extendPath(size_t level, const Vector<T>& node, const Array<T>& cell, T vertex) {
+        writeUTF8(16);
         writeNode(node, level);
-        writeNode(cell);
+        writeArraySized(cell);
         writeUTF8(vertex);
         //std::cerr << std::endl;
     }
 
     void canonicalLeaf(const Vector<T>& node, const Array<T>& permutation) {
-        writeUTF8(16);
+        writeUTF8(17);
         writeNode(node);
         writeArray(permutation);
         //std::cerr << std::endl;
     }
 
+    std::string proof_file;
     std::ofstream out;
 };
 

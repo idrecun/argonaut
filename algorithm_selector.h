@@ -11,14 +11,14 @@
 #include "array.h"
 #include "vector.h"
 #include "permutation.h"
-#include "algorithms.h"
+#include "utility.h"
+#include "algorithm_argo.h"
 
 namespace morphi {
 
 class AlgorithmSelector {
 public:
 
-    struct Options;
     struct Params;
 
     // AlgorithmSelector(command line options, input stream, other stuff)
@@ -91,43 +91,46 @@ public:
 
     template<typename AlgorithmType>
     void runWith() {
-        AlgorithmType solver(m_vertices, m_edges, m_edge_list, m_colors);
+        AlgorithmType solver(m_vertices, m_edges, m_edge_list, m_colors, m_options.aut_limit, m_options.proof_type, m_options.proof_file);
 
         m_canon.copyFwd(solver.solve());
 
-        if(m_options.relabel) {
-            for(size_t idx = 0; idx < m_vertices; idx++)
-                m_canon.set(idx, m_params.relabeling[m_canon[idx]]);
+        if(m_options.proof_type == ProofType::PrunedTree) {
+            solver.generateProof();
         }
+        else if(m_options.proof_type == ProofType::None){
+            if(m_options.relabel) {
+                for(size_t idx = 0; idx < m_vertices; idx++)
+                    m_canon.set(idx, m_params.relabeling[m_canon[idx]]);
+            }
 
-        if(m_options.relabel) {
-            for(size_t i = 0; i < m_vertices; i++)
-                for(size_t j = 0; j < m_vertices; j++)
-                    std::cout << solver.graph.adjacent(m_canon.m_inverse[m_params.relabeling[i]], m_canon.m_inverse[m_params.relabeling[j]]);
-            std::cout << std::endl;
-        }
-        else {
-            for(size_t i = 0; i < m_vertices; i++)
-                for(size_t j = 0; j < m_vertices; j++)
-                    std::cout << solver.graph.adjacent(m_canon.m_inverse[i], m_canon.m_inverse[j]);
-            std::cout << std::endl;
+            if(m_options.relabel) {
+                for(size_t i = 0; i < m_vertices; i++)
+                    for(size_t j = 0; j < m_vertices; j++)
+                        std::cout << solver.graph.adjacent(m_canon.m_inverse[m_params.relabeling[i]], m_canon.m_inverse[m_params.relabeling[j]]);
+                std::cout << std::endl;
+            }
+            else {
+                for(size_t i = 0; i < m_vertices; i++)
+                    for(size_t j = 0; j < m_vertices; j++)
+                        std::cout << solver.graph.adjacent(m_canon.m_inverse[i], m_canon.m_inverse[j]);
+                std::cout << std::endl;
+            }
         }
     }
 
     void run() {
         // gomilu if-else zavisno od opcija i velicine grafa?
         if(m_vertices <= 0xff)
-            runWith< AlgorithmDFS<uint8_t, uint32_t> >();
+            runWith< AlgorithmArgonaut<uint8_t, uint32_t> >();
         else if(m_vertices <= 0xffff)
-            runWith< AlgorithmDFS<uint16_t, uint32_t> >();
+            runWith< AlgorithmArgonaut<uint16_t, uint32_t> >();
         else
-            runWith< AlgorithmDFS<uint32_t, uint32_t> >();
+            runWith< AlgorithmArgonaut<uint32_t, uint32_t> >();
     }
 
     // Command line options
-    struct Options {
-        bool relabel;
-    } m_options;
+    Options m_options;
 
     struct Params {
         Permutation<uint32_t> relabeling;
